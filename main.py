@@ -48,17 +48,17 @@ def make_parser():
     parser.add_argument('--metric', type=str, default='rates', choices=['rates', 'power'], help='Metric for rate calculation')
 
     # training parameters
-    parser.add_argument('--training_modes', type=list, default=['dual'], help='Training modes for the model')
+    parser.add_argument('--training_modes', type=list, default=['primal'], help='Training modes for the model')
     parser.add_argument('--supervised', action='store_true', default=True, help='Supervised training')
     parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
     parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
-    parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
-    parser.add_argument('--num_samplers', type=int, default=1, help='Number of samplers for the data loader')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch size')
+    parser.add_argument('--num_samplers', type=int, default=32, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=1500, help='Number of training epochs')
     parser.add_argument('--num_epochs_dual', type=int, default=4500, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=1, help='Number of training cycles')
-    parser.add_argument('--lr_main', type=float, default=1e-6, help='Learning rate for primal model parameters')
+    parser.add_argument('--lr_main', type=float, default=1e-3, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_dual_main', type=float, default=1e-3, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
     parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
@@ -83,7 +83,9 @@ def make_parser():
     parser.add_argument('--conv_layer_normalize', type=bool, default=False, help='Convolutional layer normalization')
     parser.add_argument('--normalize_mu', action='store_true', default=True, help='Normalize the dual variables while training the primal model')
     parser.add_argument('--mu_max', type=int, default=10.0, help='maximum value of the dual variables in the training set')
-    parser.add_argument('--zero_probability', type=float, default=0.3, help='Probability of zeroing out the dual variables')
+    parser.add_argument('--mu_distribution', type=str, default='exponential', choices=['uniform', 'exponential'], help='Distribution of the dual variables')
+    parser.add_argument('--mu_nan', type=float, default=0.0, help='value of NaN in the dual variables')
+    parser.add_argument('--zero_probability', type=float, default=0.45, help='Probability of zeroing out the dual variables')
     parser.add_argument('--all_zeros', action='store_true', default=True, help='Use all zeros for the dual variables')
     parser.add_argument('--constrained_subnetwork', type=float, default=0.5, help='impose constraints on part of the agents, 1 <==> full network')
     parser.add_argument('--architecture', type=str, default='PrimalGNN', help='Architecture of the model')
@@ -127,7 +129,7 @@ def main(args):
     os.makedirs('./data', exist_ok=True)
 
     # set the computation device and create the model using a GNN parameterization
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     primal_model = PrimalModel(args, device) #normalize_mu)
     dual_model = DualModel(args, device)
 

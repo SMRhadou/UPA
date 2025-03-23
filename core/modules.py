@@ -161,7 +161,7 @@ class DualModel(nn.Module):
 
 
 
-    def DA(self, primal_model, data, lr_dual, resilient_weight_decay, n, r_min, noise_var, num_iters, ss_param, device, adjust_constraints=True):
+    def DA(self, primal_model, data, lr_dual, resilient_weight_decay, n, r_min, noise_var, num_iters, ss_param, mu_nan, device, adjust_constraints=True):
         primal_model.eval()
 
         data = data.to(self.device)
@@ -177,7 +177,7 @@ class DualModel(nn.Module):
         # initialize
         if self.constrained_subnetwork < 1:
             mu = torch.cat((0.01 * torch.rand(num_graphs, int(np.floor(self.constrained_subnetwork*self.n))).to(self.device), 
-                           300*torch.ones(num_graphs, int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)), dim=1)
+                           mu_nan * torch.ones(num_graphs, int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)), dim=1)
             mu = mu.view(num_graphs * self.n, 1)
         else:
             mu = 0.1 * torch.rand(num_graphs * n, 1).to(device)
@@ -202,7 +202,7 @@ class DualModel(nn.Module):
             if self.constrained_subnetwork:
                 mu = mu.view(-1, self.n)
                 mu = torch.cat([mu[:, :int(np.floor(self.constrained_subnetwork*self.n))], 
-                                300*torch.ones(mu.shape[0], int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)], dim=1)
+                                mu_nan * torch.ones(mu.shape[0], int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)], dim=1)
                 mu = mu.view(-1, 1)
             mu.data.clamp_(0)
 

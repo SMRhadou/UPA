@@ -20,6 +20,7 @@ class Trainer():
         self.args = args
         self.dual_trained = kwargs.get('dual_trained', False)
         self.multipliers_table = []
+        self.mu_nan = args.mu_nan
         
 
 
@@ -27,6 +28,10 @@ class Trainer():
         if dist == 'uniform':
             assert len(dist_param) == 1
             mu_initial = mu_max * torch.rand(num_samplers, 1)
+        elif dist == 'exponential':
+            rate = -torch.log(1 - torch.tensor(0.96)) / (1.5*mu_max)
+            dist = torch.distributions.exponential.Exponential(rate=rate)
+            mu_initial = dist.sample(sample_shape=(num_samplers, 1))
         else:
             raise NotImplementedError
         
@@ -45,6 +50,11 @@ class Trainer():
                 mu[:mu.shape[0]//2].to(self.device),
                 torch.stack(self.multipliers_table).view(-1, self.args.n)[indices].to(self.device)
             ), dim=0)
+
+        # if self.args.constrained_subnetwork < 1:
+        #     mu = mu.view(-1, self.args.n)
+        #     mu = torch.cat((mu[:, :int(np.floor(self.args.constrained_subnetwork*self.args.m))], 
+        #                     self.mu_nan * torch.ones(mu.shape[0], int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m)))), dim=1)
         
         return mu.view(-1, 1)
 
@@ -56,7 +66,7 @@ class Trainer():
             data.transmitters_index, data.num_graphs
         
         mu = torch.cat((0.01 * torch.rand(num_graphs, int(np.floor(self.args.constrained_subnetwork*self.args.m))).to(self.device), 
-                        300*torch.ones(num_graphs, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
+                        self.mu_nan * torch.ones(num_graphs, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
         mu = mu.view(num_graphs * self.args.n, 1)
 
         gamma = torch.ones(num_graphs * self.args.n, 1).to(self.device)
@@ -127,12 +137,13 @@ class Trainer():
                 self.primal_model.train()
                 self.dual_model.eval()
                 
-                mu = self.multiplier_sampler(num_graphs*num_samplers*self.args.n, self.args.mu_max, self.args.zero_probability, all_zeros=self.args.all_zeros).to(self.device)
+                mu = self.multiplier_sampler(num_graphs*num_samplers*self.args.n, self.args.mu_max, self.args.zero_probability, 
+                                             dist=self.args.mu_distribution, all_zeros=self.args.all_zeros).to(self.device)
                 p = self.primal_model(mu.detach(), edge_index_l, edge_weight_l, transmitters_index)    # MU is normalized to [0, 1]
                 gamma = torch.ones(num_samplers*num_graphs * self.args.n, 1).to(self.device) 
                 rates = calc_rates(p, gamma, a_l[:, :, :], self.noise_var, self.args.ss_param)
 
-                loss = self.primal_model.loss(rates, mu, p, constrained=False, metric=self.args.metric)
+                loss = self.primal_model.loss(rates, mu, p, constrained=False, metric=self.args.metric, constrained_subnetwork=self.args.constrained_subnetwork)
                 self.primal_optimizer.zero_grad()
                 loss.backward()
                 self.primal_optimizer.step()
@@ -207,7 +218,7 @@ class Trainer():
             # DA
             mu_over_time, L_over_time, all_Ps, all_rates, violation_dict = \
                 self.dual_model.DA(self.primal_model, data, self.args.lr_DA_dual, self.args.dual_resilient_decay, 
-                                        self.args.n, self.args.r_min, self.noise_var, num_iters, self.args.ss_param, self.device,
+                                        self.args.n, self.args.r_min, self.noise_var, num_iters, self.args.ss_param, self.mu_nan, self.device,
                                         adjust_constraints)
             violation = violation_dict['violation']
 
