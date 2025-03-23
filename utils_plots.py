@@ -57,41 +57,53 @@ def plot_testing(test_results, f_min, num_curves=20, pathname=None, num_agents=1
     
 
 def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=None):
-    modes_list = ['SA']#, 'unrolling']
+    modes_list = ['SA', 'unrolling']
     fig, ax = plt.subplots(2, 2, figsize=(8, 4))
 
-    for mode in modes_list:
+    colors = {'SA': 'darkorange', 'unrolling': 'green'}
+    alpha = 0.5  # Transparency level
+
+    for i, mode in enumerate(modes_list):
         power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])[-1,:,-1].reshape(-1, n)
         rates = np.stack(all_epoch_results[mode, 'all_rates'])[-1,:,-1].reshape(-1, n)
         
-        # for i in range(num_curves):
-        ax[0,0].hist((power_allocated[:,:constrained_agents]/P_max).reshape(-1,1), bins=20)
-        ax[0,1].hist(rates[:,:constrained_agents].reshape(-1,1), bins=20) 
-        ax[0,0].set_xlabel(r'p/p_{max}')
-        ax[0,0].set_ylabel('constrained agents')
-        ax[0,1].set_xlabel('rates')
+        # Create histograms with transparent colors
+        ax[0,0].hist((power_allocated[:,:constrained_agents]/P_max).reshape(-1,1), bins=20, 
+                     alpha=alpha, color=colors[mode], label=mode)
+        ax[0,1].hist(rates[:,:constrained_agents].reshape(-1,1), bins=20, 
+                     alpha=alpha, color=colors[mode], label=mode)
+        ax[1,0].hist((power_allocated[:,constrained_agents:]/P_max).reshape(-1,1), bins=20, 
+                     alpha=alpha, color=colors[mode], label=mode)
+        ax[1,1].hist(rates[:,constrained_agents:].reshape(-1,1), bins=20, 
+                     alpha=alpha, color=colors[mode], label=mode)
+    
+    # Add labels and titles
+    ax[0,0].set_xlabel(r'p/p_{max}')
+    ax[0,0].set_ylabel('constrained agents')
+    ax[0,1].set_xlabel('rates')
+    ax[1,0].set_xlabel(r'p/p_{max}')
+    ax[1,0].set_ylabel('unconstrained agents')
+    ax[1,1].set_xlabel('rates')
+    ax[0,0].set_title(r'Power allocated \% P_max')
+    ax[0,1].set_title('Rates')
+    
+    # Add legend to each subplot
+    for i in range(2):
+        for j in range(2):
+            ax[i,j].legend()
 
-        ax[1,0].hist((power_allocated[:,constrained_agents:]/P_max).reshape(-1,1), bins=20)
-        ax[1,1].hist(rates[:,constrained_agents:].reshape(-1,1), bins=20) 
-        ax[1,0].set_xlabel(r'p/p_{max}')
-        ax[1,0].set_ylabel('unconstrained agents')
-        ax[1,1].set_xlabel('rates')
-
-        # ax[1].legend()
-        ax[0,0].set_title(r'Power allocated  \% P_max')
-        ax[0,1].set_title('Rates')
-
-
-
-        fig.tight_layout()
-        fig.savefig(f'{pathname}/constrained_agents_{mode}.png')
+    fig.tight_layout()
+    fig.savefig(f'{pathname}/constrained_agents_comparison.png')
 
 
 
 def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, num_iters=800, unrolling_iters=6, pathname=None):
     assert pathname is not None, 'Please provide a pathname to save the figures'
 
-    modes_list = ['SA']#, 'unrolling']
+    # Define consistent colors for modes
+    colors = {'SA': 'darkorange', 'unrolling': 'green', 'random': 'lightblue', 'full_power': 'lightgray'}
+    
+    modes_list = ['SA', 'unrolling']
     layer = -1
     for mode in modes_list:
         for graph in range(3):
@@ -102,20 +114,16 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
                 ax[1,0].plot(multipliers[-1,1,:,i+graph*num_agents], label='agent {}'.format(i))
             ax[0,0].set_xlabel('iterations')
             ax[1,0].set_xlabel('iterations')
-            # log-scale y-axis
-            # ax[0,0].set_yscale('log')
-            # ax[1,0].set_yscale('log')
-            # ax[0].legend()
             ax[0,0].set_title('Dual variables')
             ax[1,0].set_title('Dual variables')
             
             power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])
-            # for i in range(num_curves):
-            ax[0,1].hist(power_allocated[-1,0,layer,graph*num_agents:(1+graph)*num_agents]/P_max, bins=20)
-            ax[1,1].hist(power_allocated[-1,1,layer,+graph*num_agents:(1+graph)*num_agents]/P_max, bins=20) 
+            ax[0,1].hist(power_allocated[-1,0,layer,graph*num_agents:(1+graph)*num_agents]/P_max, 
+                         bins=20, color=colors[mode], alpha=0.7)
+            ax[1,1].hist(power_allocated[-1,1,layer,+graph*num_agents:(1+graph)*num_agents]/P_max, 
+                         bins=20, color=colors[mode], alpha=0.7) 
             ax[0,1].set_xlabel('p')
             ax[1,1].set_xlabel('p')
-            # ax[1].legend()
             ax[0,1].set_title('Power allocated % P_max')
             ax[1,1].set_title('Power allocated % P_max')
 
@@ -127,9 +135,6 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
                 ax[1,2].plot(np.arange(start, iters), rates[-1,1,start:,i+graph*num_agents], label='agent {}'.format(i))
             ax[0,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,0,start:,6]), ':k', linewidth=1, label=r'r_min')
             ax[1,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,1,start:,6]), ':k', linewidth=1, label=r'r_min')
-            # ax[0,2].hist(rates[-1,0,-1,graph*num_agents:(1+graph)*num_agents], label='agent {}'.format(i))
-            # ax[1,2].hist(rates[-1,1,-1,graph*num_agents:(1+graph)*num_agents], label='agent {}'.format(i))
-            # ax[2].legend()
             ax[0,2].set_xlim(start, iters)
             ax[1,2].set_xlim(start, iters)
             ax[0,2].set_xlabel('rate')
@@ -155,16 +160,14 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
         fig.savefig(f'{pathname}/SA_mean_rates_{mode}.png')
 
     fig, ax = plt.subplots(1, 2, figsize=(6, 3))
-    i=0
-    for mode in modes_list:
+    for i, mode in enumerate(modes_list):
         iters = num_iters if mode == 'SA' else unrolling_iters
         temp_rates = np.stack(all_epoch_results[mode, 'all_rates'])[:,:,0]
         violation = [np.abs(np.minimum(np.stack(all_epoch_results[mode, 'all_rates'])[:,:,i] - f_min, np.zeros_like(temp_rates))).mean().item() for i in range(iters)]
-        ax[i].plot(violation)
+        ax[i].plot(violation, color=colors[mode], linewidth=2)
         ax[i].set_xlabel('layers')
         ax[i].set_ylabel('mean violation')
         ax[i].set_title(f'{mode}')
-        i += 1
     fig.tight_layout()
     fig.savefig(f'{pathname}/SA_mean_violation.png')
 
@@ -202,7 +205,13 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     
     # Prepare data for all modes
     all_metric_values = []
-    mode_labels = ['SA', 'unrolling', 'random', 'full_power']
+    # Switched the order of 'random' and 'full_power'
+    mode_labels = ['SA', 'unrolling', 'full_power', 'random']
+    
+    # Define consistent colors for modes
+    colors = {'SA': 'darkorange', 'unrolling': 'green', 'random': 'lightblue', 'full_power': 'lightgray'}
+    # Added transparency for 'random' and 'full_power'
+    alphas = {'SA': 0.6, 'unrolling': 0.6, 'random': 0.7, 'full_power': 0.7}
 
     for mode in mode_labels:
         # Get values for this mode
@@ -223,11 +232,11 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     r4 = [x + bar_width for x in r3]  # Adjust for 4th mode
     
     # Create bars
-    colors = ['skyblue', 'lightgreen', 'coral', 'lightgray']
     bars = []
-    for i, (values, color) in enumerate(zip(all_metric_values, colors)):
+    for i, (values, mode) in enumerate(zip(all_metric_values, mode_labels)):
         pos = [r1, r2, r3, r4][i]
-        bar = ax.bar(pos, values, width=bar_width, color=color, label=mode_labels[i])
+        # Apply transparency (alpha) for 'random' and 'full_power'
+        bar = ax.bar(pos, values, width=bar_width, color=colors[mode], alpha=alphas[mode], label=mode)
         bars.append(bar)
     
     # Add value labels on top of each bar
@@ -244,7 +253,7 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     
     # Customize the plot
     ax.set_ylabel('Rate (bits/s/Hz/agent)')
-    ax.set_title('Final Rate Percentiles Comparison')
+    ax.set_title('Violation Percentiles Comparison')
     ax.set_xticks([r + 2*bar_width for r in r1.tolist()])
     ax.set_xticklabels([label for _, label in metrics])
     ax.legend()
@@ -253,34 +262,6 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     # Adjust layout and save
     fig.tight_layout()
     fig.savefig(f'{pathname}/final_percentiles_comparison.png')
-    
-    # # Also create individual charts for backward compatibility
-    # for mode in mode_labels:
-    #     fig_single, ax_single = plt.subplots(figsize=(8, 5))
-    #     metric_values = []
-    #     metric_labels = []
-        
-    #     for metric_key, label in metrics:
-    #         key = (mode, metric_key)
-    #         if key in all_epoch_results and len(all_epoch_results[key]) > 0:
-    #             metric_values.append(all_epoch_results[key][-1])
-    #             metric_labels.append(label)
-        
-    #     bars = ax_single.bar(range(len(metric_values)), metric_values, color='skyblue', width=0.6)
-        
-    #     for i, bar in enumerate(bars):
-    #         height = bar.get_height()
-    #         ax_single.text(bar.get_x() + bar.get_width()/2., height + 0.05,
-    #                 f'{height:.2f}', ha='center', va='bottom', fontsize=9)
-        
-    #     ax_single.set_xticks(range(len(metric_labels)))
-    #     ax_single.set_xticklabels(metric_labels)
-    #     ax_single.set_ylabel('Rate (bits/s/Hz)')
-    #     ax_single.set_title(f'Final Rate Percentiles - {mode.capitalize()}')
-    #     ax_single.grid(axis='y', linestyle='--', alpha=0.7)
-        
-    #     fig_single.tight_layout()
-    #     fig_single.savefig(f'{pathname}/final_percentiles_{mode}.png')
     
 
 def hist_power(test_results, P_max, name='random', pathname=None):

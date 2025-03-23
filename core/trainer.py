@@ -55,10 +55,8 @@ class Trainer():
             data.edge_index_l, data.edge_weight_l, data.weighted_adjacency_l, \
             data.transmitters_index, data.num_graphs
         
-
-
         mu = torch.cat((0.01 * torch.rand(num_graphs, int(np.floor(self.args.constrained_subnetwork*self.args.m))).to(self.device), 
-                        30*torch.ones(num_graphs, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
+                        300*torch.ones(num_graphs, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
         mu = mu.view(num_graphs * self.args.n, 1)
 
         gamma = torch.ones(num_graphs * self.args.n, 1).to(self.device)

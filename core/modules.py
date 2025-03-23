@@ -25,11 +25,11 @@ def lagrangian_fn(rates, mu, r_min, p=None, metric='rates', constrained_subnetwo
         return sum_power + torch.sum((mu * (r_min - rates)), dim=1)
 
 class PrimalModel(nn.Module):
-    def __init__(self, args, device,  normalize_mu=False, unrolled=False):
+    def __init__(self, args, device, unrolled=False):
         super(PrimalModel, self).__init__()
         self.args = args
         self.device = device
-        self.normalized_mu = args.mu_max if normalize_mu else 1
+        self.normalized_mu = args.mu_max if args.normalize_mu else 1
 
         self.num_graphs = args.batch_size * args.num_samplers
         self.num_features_list = [1] + [args.primal_hidden_size] * args.primal_num_sublayers
@@ -94,6 +94,7 @@ class DualModel(nn.Module):
         self.P_max = args.P_max
         self.constrained_subnetwork = args.constrained_subnetwork
         self.resilient_weight_deacay = getattr(args, 'resilient_weight_decay', 0.0)
+        self.normalized_mu = args.mu_max if args.normalize_mu else 1
 
         if eval_mode == 'unrolling':
             self.blocks = nn.ModuleList()
@@ -110,13 +111,13 @@ class DualModel(nn.Module):
 
 
     def forward(self, block_id, mu, p, edge_index_l, edge_weight_l, transmitters_index):
-        x = torch.cat((p/self.P_max, mu), dim=1)
+        x = torch.cat((p/self.P_max, mu/self.normalized_mu), dim=1)
         mu = self.blocks[block_id](x, edge_index_l, edge_weight_l, transmitters_index)
         if self.constrained_subnetwork < 1:
             mu = mu.view(-1, self.n)
             mu = torch.cat([mu[:, :int(np.floor(self.constrained_subnetwork*self.n))], torch.zeros(mu.shape[0], int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)], dim=1)
             mu = mu.view(-1, 1)
-        return mu
+        return mu * self.normalized_mu
 
 
     def loss(self, outputs_list, r_min, num_graphs, constraint_eps=None, metric='rates', **kwargs):
@@ -128,7 +129,7 @@ class DualModel(nn.Module):
 
         for (mu, p, rates, _) in outputs_list:
             rates, mu, p = rates.view(num_graphs, self.n), mu.view(num_graphs, self.n), p.view(num_graphs, self.n)
-            violation = torch.minimum(rates - r_min, torch.zeros_like(rates))
+            violation = torch.minimum(rates[:, :int(np.floor(self.constrained_subnetwork*self.n))] - r_min, torch.zeros_like(rates[:, :int(np.floor(self.constrained_subnetwork*self.n))]))
 
             # simple loss
             if supervised:
@@ -140,8 +141,8 @@ class DualModel(nn.Module):
                 
             # resilience loss
             if self.resilient_weight_deacay > 0:
-                L = L + mu.norm(p=1, dim=1)**2/(2*self.resilient_weight_deacay)
-                violation_list.append(violation.norm(p=1, dim=1) + torch.norm(mu, p=1, dim=1)/self.resilient_weight_deacay)
+                L = L + mu[:, :int(np.floor(self.constrained_subnetwork*self.n))].norm(p=1, dim=1)**2/(2*self.resilient_weight_deacay)
+                violation_list.append(violation.norm(p=1, dim=1) + torch.norm(mu[:, :int(np.floor(self.constrained_subnetwork*self.n))], p=1, dim=1)/self.resilient_weight_deacay)
             else:
                 violation_list.append(violation.sum(1).abs())
             Lagrangian_list.append(L)
@@ -176,7 +177,7 @@ class DualModel(nn.Module):
         # initialize
         if self.constrained_subnetwork < 1:
             mu = torch.cat((0.01 * torch.rand(num_graphs, int(np.floor(self.constrained_subnetwork*self.n))).to(self.device), 
-                           30*torch.ones(num_graphs, int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)), dim=1)
+                           300*torch.ones(num_graphs, int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)), dim=1)
             mu = mu.view(num_graphs * self.n, 1)
         else:
             mu = 0.1 * torch.rand(num_graphs * n, 1).to(device)
@@ -201,7 +202,7 @@ class DualModel(nn.Module):
             if self.constrained_subnetwork:
                 mu = mu.view(-1, self.n)
                 mu = torch.cat([mu[:, :int(np.floor(self.constrained_subnetwork*self.n))], 
-                                30*torch.ones(mu.shape[0], int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)], dim=1)
+                                300*torch.ones(mu.shape[0], int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)], dim=1)
                 mu = mu.view(-1, 1)
             mu.data.clamp_(0)
 

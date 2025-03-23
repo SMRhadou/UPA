@@ -48,7 +48,7 @@ def make_parser():
     parser.add_argument('--metric', type=str, default='rates', choices=['rates', 'power'], help='Metric for rate calculation')
 
     # training parameters
-    parser.add_argument('--training_modes', type=list, default=['dual'], help='Training modes for the model')
+    parser.add_argument('--training_modes', type=list, default=['primal', 'dual'], help='Training modes for the model')
     parser.add_argument('--supervised', action='store_true', default=True, help='Supervised training')
     parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
     parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
@@ -59,13 +59,13 @@ def make_parser():
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=1, help='Number of training cycles')
     parser.add_argument('--lr_main', type=float, default=1e-6, help='Learning rate for primal model parameters')
-    parser.add_argument('--lr_dual_main', type=float, default=1e-3, help='Learning rate for dual networks')
+    parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
     parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
     parser.add_argument('--lr_DA_dual', type=float, default=1, help='Learning rate for dual variables in the DA algorithm')
     parser.add_argument('--training_resilient_decay', type=float, default=0.0, help='Learning rate for resilient dual variables')
     parser.add_argument('--thresh_resilient', type=float, default=2.5, help='Threshold for resilient dual variables')
-    parser.add_argument('--evaluation_interval', type=int, default=1, help='Interval for evaluating the model')
+    parser.add_argument('--evaluation_interval', type=int, default=100, help='Interval for evaluating the model')
     
     # architecture parameters
     parser.add_argument('--primal_k_hops', type=int, default=2, help='Number of hops in the GNN')
@@ -73,9 +73,9 @@ def make_parser():
     parser.add_argument('--primal_num_sublayers', type=int, default=3, help='Number of primal sub-layers')
 
     parser.add_argument('--dual_k_hops', type=int, default=2, help='Number of hops in the GNN')
-    parser.add_argument('--dual_hidden_size', type=list, default=256, help='Number of GNN features in different layers')
-    parser.add_argument('--dual_num_sublayers', type=int, default=3, help='Number of dual sub-layers')
-    parser.add_argument('--num_blocks', type=int, default=8, help='Number of blocks in the dual model')
+    parser.add_argument('--dual_hidden_size', type=list, default=128, help='Number of GNN features in different layers')
+    parser.add_argument('--dual_num_sublayers', type=int, default=2, help='Number of dual sub-layers')
+    parser.add_argument('--num_blocks', type=int, default=6, help='Number of blocks in the dual model')
 
     parser.add_argument('--primal_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the GNN')
     parser.add_argument('--dual_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the dual model')
@@ -128,11 +128,15 @@ def main(args):
 
     # set the computation device and create the model using a GNN parameterization
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    primal_model = PrimalModel(args, device, normalize_mu=False) #normalize_mu)
+    primal_model = PrimalModel(args, device) #normalize_mu)
     dual_model = DualModel(args, device)
 
     if args.training_modes[0] == 'dual':
-        experiment_path = './results/m_100_R_2500_Pmax_0_ss_1.0_resilience_100.0_depth_3_MUmax_2.0_rMin_2.0_lr_1e-06/7fe6ab7b' #7fe6ab7b
+        if args. normalize_mu:
+            experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/bb3c2c94' #7fe6ab7b
+        else:
+            experiment_path = './results/m_100_R_2500_Pmax_0_ss_1.0_resilience_100.0_depth_3_MUmax_2.0_rMin_2.0_lr_1e-06/7fe6ab7b' #7fe6ab7b
+            assert args.normalize_mu == False, 'Normalization of mu is not supported for dual training'
         checkpoint = torch.load('{}/best_primal_model.pt'.format(experiment_path), map_location='cpu')
         primal_model.load_state_dict(checkpoint['model_state_dict'])
 
@@ -155,7 +159,7 @@ def main(args):
             for phase in batch_size.keys():
                 for data in tqdm(data_list[phase]):
                     data = data.to(device)
-                    target = dual_model.DA(primal_model, data, args.lr_DA_dual, args.dual_resilient_decay, 
+                    target = dual_model.DA(primal_model, data, args.lr_DA_dual, 10.0, #args.dual_resilient_decay, 
                                             args.n, args.r_min, args.noise_var, 200, args.ss_param, device,
                                             adjust_constraints=False)
                     
@@ -230,7 +234,7 @@ def main(args):
     mu_test = args.mu_max * torch.rand(args.num_samplers * args.batch_size * args.m, 1).to(device)
     mu_test[-1] = torch.zeros_like(mu_test[-1])
     L_test = []
-    best_loss = {'train': float('inf'), 'test': float('inf')}
+    best_loss = {mode: np.inf for mode in args.training_modes}
 
     num_epochs = {'primal': args.num_epochs_primal, 'dual': args.num_epochs_dual}
     print('Starting the training and evaluation process ...')
@@ -238,19 +242,21 @@ def main(args):
         if cycle > 0:
             checkpoint = torch.load('./results/{}/best_primal_model.pt'.format(experiment_name), map_location='cpu')
             primal_model.load_state_dict(checkpoint['model_state_dict'])
+            checkpoint = torch.load('./results/{}/best_dual_model.pt'.format(experiment_name), map_location='cpu')
+            dual_model.load_state_dict(checkpoint['model_state_dict'])
 
         for mode in args.training_modes:
             training_multipliers = torch.zeros(args.num_blocks, 1).to(device)
 
             for epoch in tqdm(range(num_epochs[mode])):
                 for phase in loader:
-                    if phase == 'train':
 
+                    if phase == 'train':
                         train_loss, training_multipliers = trainer.train(epoch, training_multipliers, mode=mode)
 
                         #save best model
-                        if train_loss < best_loss[phase]:
-                            best_loss[phase] = train_loss
+                        if train_loss < best_loss[mode]:
+                            best_loss[mode] = train_loss
                             if mode == 'primal':
                                 # Save best model with metadata for better tracking
                                 checkpoint = {
@@ -283,7 +289,6 @@ def main(args):
                             L_test.append(L)
 
                         if mode == 'dual' and (epoch+1)%args.evaluation_interval == 0:
-
                             SA_results, unrolling_results, random_results, full_power_results = trainer.eval(loader[phase], num_iters=args.num_iters)
 
                             modes_list = ['SA', 'random', 'full_power', 'unrolling']
