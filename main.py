@@ -48,7 +48,7 @@ def make_parser():
     parser.add_argument('--metric', type=str, default='rates', choices=['rates', 'power'], help='Metric for rate calculation')
 
     # training parameters
-    parser.add_argument('--training_modes', type=list, default=['primal', 'dual'], help='Training modes for the model')
+    parser.add_argument('--training_modes', type=list, default=['dual'], help='Training modes for the model')
     parser.add_argument('--supervised', action='store_true', default=True, help='Supervised training')
     parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
     parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
@@ -59,7 +59,7 @@ def make_parser():
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=1, help='Number of training cycles')
     parser.add_argument('--lr_main', type=float, default=1e-6, help='Learning rate for primal model parameters')
-    parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
+    parser.add_argument('--lr_dual_main', type=float, default=1e-3, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
     parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
     parser.add_argument('--lr_DA_dual', type=float, default=1, help='Learning rate for dual variables in the DA algorithm')
@@ -73,12 +73,12 @@ def make_parser():
     parser.add_argument('--primal_num_sublayers', type=int, default=3, help='Number of primal sub-layers')
 
     parser.add_argument('--dual_k_hops', type=int, default=2, help='Number of hops in the GNN')
-    parser.add_argument('--dual_hidden_size', type=list, default=128, help='Number of GNN features in different layers')
-    parser.add_argument('--dual_num_sublayers', type=int, default=2, help='Number of dual sub-layers')
+    parser.add_argument('--dual_hidden_size', type=list, default=256, help='Number of GNN features in different layers')
+    parser.add_argument('--dual_num_sublayers', type=int, default=3, help='Number of dual sub-layers')
     parser.add_argument('--num_blocks', type=int, default=6, help='Number of blocks in the dual model')
 
     parser.add_argument('--primal_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the GNN')
-    parser.add_argument('--dual_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the dual model')
+    parser.add_argument('--dual_norm_layer', type=str, default='batch', choices=['batch', 'layer', 'graph'], help='Normalization layer for the dual model')
     parser.add_argument('--dropout_rate', type=float, default=0.2, help='Dropout rate')
     parser.add_argument('--conv_layer_normalize', type=bool, default=False, help='Convolutional layer normalization')
     parser.add_argument('--normalize_mu', action='store_true', default=True, help='Normalize the dual variables while training the primal model')

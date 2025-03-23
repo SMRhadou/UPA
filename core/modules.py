@@ -48,14 +48,14 @@ class PrimalModel(nn.Module):
             p = torch.clamp(p, min=1e-5) # to avoid log(0) in calc_rates
         return p
     
-    def loss(self, rates, mu, p=None, constrained=False, metric='rates'):
+    def loss(self, rates, mu, p=None, constrained=False, metric='rates', constrained_subnetwork=None):
         if mu.shape[0] != self.num_graphs * self.args.n:
             num_graphs = mu.shape[0] // self.args.n
         else:
             num_graphs = self.num_graphs
         rates, mu = rates.view(num_graphs, self.args.n), mu.view(num_graphs, self.args.n)
         p = p.view(num_graphs, self.args.n)
-        L = lagrangian_fn(rates, mu, self.args.r_min, p=p, metric=metric, constrained_subnetwork=self.args.constrained_subnetwork).mean()
+        L = lagrangian_fn(rates, mu, self.args.r_min, p=p, metric=metric, constrained_subnetwork=constrained_subnetwork).mean()
         if not constrained:
             return L
         else:
@@ -94,7 +94,7 @@ class DualModel(nn.Module):
         self.P_max = args.P_max
         self.constrained_subnetwork = args.constrained_subnetwork
         self.resilient_weight_deacay = getattr(args, 'resilient_weight_decay', 0.0)
-        self.normalized_mu = args.mu_max if args.normalize_mu else 1
+        self.normalized_mu = 1# args.mu_max if args.normalize_mu else 1
 
         if eval_mode == 'unrolling':
             self.blocks = nn.ModuleList()

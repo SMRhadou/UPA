@@ -64,7 +64,8 @@ class Trainer():
         for block_id in range(self.dual_model.num_blocks):
             p = self.primal_model(mu, edge_index_l, edge_weight_l, transmitters_index)
             rates = calc_rates(p, gamma, a_l[:, :, :], self.noise_var, self.args.ss_param)
-            L = self.primal_model.loss(rates, mu, p, constrained=False, metric='power' if self.primal_model.args.metric == 'power' else 'rates')/ self.args.n
+            L = self.primal_model.loss(rates, mu, p, constrained=False, metric='power' if self.primal_model.args.metric == 'power' else 'rates',
+                                       constrained_subnetwork=self.args.constrained_subnetwork)/ self.args.n
             outputs_list.append((mu, p, rates, L))
             mu = mu + self.dual_model(block_id, mu, p, edge_index_l, edge_weight_l, transmitters_index)
             mu = torch.relu(mu)
@@ -72,7 +73,8 @@ class Trainer():
         # Primal recovery
         p = self.primal_model(mu, edge_index_l, edge_weight_l, transmitters_index)
         rates = calc_rates(p, gamma, a_l[:, :, :], self.noise_var, self.args.ss_param)
-        L = self.primal_model.loss(rates, mu, p, constrained=False, metric='power' if self.primal_model.args.metric == 'power' else 'rates') /self.args.n
+        L = self.primal_model.loss(rates, mu, p, constrained=False, metric='power' if self.primal_model.args.metric == 'power' else 'rates',
+                                   constrained_subnetwork=self.args.constrained_subnetwork) /self.args.n
         outputs_list.append((mu, p, rates, L))
 
         if self.args.use_wandb:

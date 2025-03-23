@@ -29,8 +29,8 @@ np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
 def main(R):
-    experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_0.0_depth_2_MUmax_10.0_rMin_2.0_lr_1e-06/'.format(R)
-    experiment_path += '53839d7b' if R == 2500 else 'c8e72391' # 1000 or 2000
+    experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/'.format(R)
+    experiment_path += '0ebee525' if R == 2500 else 'c8e72391' # 1000 or 2000
     # c820fc50 (2), 7841d161 (3)
 
     all_epoch_results = defaultdict(list)
