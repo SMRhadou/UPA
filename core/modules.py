@@ -31,6 +31,7 @@ class PrimalModel(nn.Module):
         self.device = device
         self.normalized_mu = args.mu_max if args.normalize_mu else 1
         self.unrolled = unrolled
+        self.primal_num_blocks = args.primal_num_blocks if hasattr(args, 'primal_num_blocks') else args.num_blocks
 
         self.num_graphs = args.batch_size * args.num_samplers
         if unrolled:
@@ -48,7 +49,7 @@ class PrimalModel(nn.Module):
                             ).to(device)
         else:
             self.blocks = nn.ModuleList()
-            for _ in range(args.primal_num_blocks):
+            for _ in range(self.primal_num_blocks):
                 if args.architecture == 'GNN':
                     self.blocks.append(GNN(self.num_features_list, args.P_max).to(device))
                 elif args.architecture == 'PrimalGNN':
@@ -98,8 +99,9 @@ class PrimalModel(nn.Module):
                 r_l, mu_l, p_l = r_l.view(num_graphs, self.args.n), mu.view(num_graphs, self.args.n), p_l.view(num_graphs, self.args.n)
                 lagrangian_list.append(lagrangian_fn(r_l, mu_l, self.args.r_min, p=p_l, metric=metric, constrained_subnetwork=constrained_subnetwork))
             constrained_loss = self.descending_constraints(torch.stack(lagrangian_list), constraint_eps)
+            L = lagrangian_list[-1].mean()
             
-        return lagrangian_list[-1].mean(), constrained_loss if constrained_loss is not None else torch.zeros_like(L.mean()).to(self.device)
+        return L, constrained_loss if constrained_loss is not None else torch.zeros(self.primal_num_blocks).to(self.device)
         
 
 
@@ -235,10 +237,11 @@ class DualModel(nn.Module):
         for _ in range(num_iters):
             # pass the instantaneous fading arrays (network states), augmented with dual variables, at each step into the main GNN to get RRM decisions
             p = primal_model(mu.detach(), edge_index_l, edge_weight_l, transmitters_index)
-
+            if isinstance(p, list):
+                p = p[-1]
             gamma = torch.ones(num_graphs * n, 1).to(device) # user selection decisions are always the same (single Rx per Tx)
             rates = calc_rates(p.detach(), gamma, a_l[:, :, :], noise_var,ss_param)
-            L = primal_model.loss(rates, mu, p, constrained=False, 
+            L, _ = primal_model.loss(rates, mu, p, 
                                     metric='power' if hasattr(primal_model.args, 'metric') and primal_model.args.metric == 'power' else 'rates')
 
             # update the dual variables

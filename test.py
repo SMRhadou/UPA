@@ -29,8 +29,8 @@ np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
 def main(R):
-    experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_10.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/'.format(R)
-    experiment_path += '670c9982' if R == 2500 else 'c8e72391' # 1000 or 2000
+    experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/'.format(R)
+    experiment_path += 'c3e6d9fd' if R == 2500 else 'c8e72391' # 1000 or 2000
     # c820fc50 (2), 7841d161 (3)
 
     all_epoch_results = defaultdict(list)
@@ -47,6 +47,7 @@ def main(R):
     args.use_wandb = False
     args.adjust_constraints = False
  
+    # args.unrolled_primal = False
     # args.constrained_subnetwork = 0.5
     # args.normalize_mu = getattr(args, 'normalize_mu', False)
     # args.mu_nan = 300
@@ -65,8 +66,8 @@ def main(R):
     del data_list
 
     # load model from checkpoint
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-    primal_model = PrimalModel(args, device)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    primal_model = PrimalModel(args, device, unrolled=args.unrolled_primal)
     dual_model = DualModel(args, device)
     if args.training_modes[0] == 'dual':
         if args. normalize_mu:
@@ -118,7 +119,7 @@ def main(R):
     if args.training_modes[0] == 'dual':
         all_epoch_results['unrolling', 'test_mu_over_time'].append(unrolling_results['test_mu_over_time'])
 
-    plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=NUM_EPOCHS, unrolling_iters=args.num_blocks+1, pathname='{}/figs'.format(experiment_path))
+    plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=NUM_EPOCHS, unrolling_iters=args.dual_num_blocks+1, pathname='{}/figs'.format(experiment_path))
     plot_final_percentiles_comparison(all_epoch_results, pathname='{}/figs'.format(experiment_path))
     if args.constrained_subnetwork < 1:
         plot_subnetworks(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)) , args.P_max, args.n, pathname='{}/figs'.format(experiment_path))
