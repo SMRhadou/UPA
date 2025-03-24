@@ -29,8 +29,8 @@ np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
 def main(R):
-    experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/'.format(R)
-    experiment_path += '0ebee525' if R == 2500 else 'c8e72391' # 1000 or 2000
+    experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_10.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/'.format(R)
+    experiment_path += '670c9982' if R == 2500 else 'c8e72391' # 1000 or 2000
     # c820fc50 (2), 7841d161 (3)
 
     all_epoch_results = defaultdict(list)
@@ -48,7 +48,8 @@ def main(R):
     args.adjust_constraints = False
  
     # args.constrained_subnetwork = 0.5
-    args.normalize_mu = getattr(args, 'normalize_mu', False)
+    # args.normalize_mu = getattr(args, 'normalize_mu', False)
+    # args.mu_nan = 300
     # args.primal_hidden_size = 256
     # args.primal_num_sublayers = 3
     # args.primal_k_hops = 2
@@ -60,11 +61,11 @@ def main(R):
     # data_path = './data/m_100_R_2500_Pmax_0_60.json'
     data_path = './data/{}_{}_train_{}_target.json'.format(experiment_path.split('/')[-2][:30], max_D_TxRx, args.num_samples_train)
     data_list = torch.load(data_path, map_location='cpu')
-    loader = DataLoader(WirelessDataset(data_list['test']), batch_size=32, shuffle=False)
+    loader = DataLoader(WirelessDataset(data_list['test']), batch_size=64, shuffle=False)
     del data_list
 
     # load model from checkpoint
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     primal_model = PrimalModel(args, device)
     dual_model = DualModel(args, device)
     if args.training_modes[0] == 'dual':

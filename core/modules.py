@@ -30,39 +30,83 @@ class PrimalModel(nn.Module):
         self.args = args
         self.device = device
         self.normalized_mu = args.mu_max if args.normalize_mu else 1
+        self.unrolled = unrolled
 
         self.num_graphs = args.batch_size * args.num_samplers
-        self.num_features_list = [1] + [args.primal_hidden_size] * args.primal_num_sublayers
-        if args.architecture == 'GNN':
-            self.model = GNN(self.num_features_list, args.P_max).to(device)
-        elif args.architecture == 'PrimalGNN':
-            norm_layer = getattr(args, 'primal_norm_layer', 'batch')  # Default to 0.0 if not defined
-            self.model = PrimalGNN(num_features_list=self.num_features_list, 
+        if unrolled:
+            self.num_features_list = [2] + [args.primal_hidden_size] * args.primal_num_sublayers
+        else:
+            self.num_features_list = [1] + [args.primal_hidden_size] * args.primal_num_sublayers
+        if not self.unrolled:
+            if args.architecture == 'GNN':
+                self.model = GNN(self.num_features_list, args.P_max).to(device)
+            elif args.architecture == 'PrimalGNN':
+                norm_layer = getattr(args, 'primal_norm_layer', 'batch')  # Default to 0.0 if not defined
+                self.model = PrimalGNN(num_features_list=self.num_features_list, 
+                            P_max=args.P_max, k_hops = args.primal_k_hops, norm_layer = norm_layer, dropout_rate=args.dropout_rate,
+                            conv_layer_normalize = args.conv_layer_normalize
+                            ).to(device)
+        else:
+            self.blocks = nn.ModuleList()
+            for _ in range(args.primal_num_blocks):
+                if args.architecture == 'GNN':
+                    self.blocks.append(GNN(self.num_features_list, args.P_max).to(device))
+                elif args.architecture == 'PrimalGNN':
+                    norm_layer = getattr(args, 'primal_norm_layer', 'batch')
+                    self.blocks.append(PrimalGNN(num_features_list=self.num_features_list,
                         P_max=args.P_max, k_hops = args.primal_k_hops, norm_layer = norm_layer, dropout_rate=args.dropout_rate,
                         conv_layer_normalize = args.conv_layer_normalize
-                        ).to(device)
+                        ).to(device))
+            
+    def sub_forward(self, block_id, mu, edge_index_l, edge_weight_l, transmitters_index):
+        div_p = self.blocks[block_id](mu/self.normalized_mu, edge_index_l, edge_weight_l, transmitters_index, activation=None)
+        return div_p
 
     def forward(self, mu, edge_index_l, edge_weight_l, transmitters_index):
-        p = self.model(mu/self.normalized_mu, edge_index_l, edge_weight_l, transmitters_index)
-        if getattr(self.args, 'crop_p', 0) > 0:
-            p = torch.clamp(p, min=1e-5) # to avoid log(0) in calc_rates
-        return p
+        if not self.unrolled:
+            p = self.model(mu/self.normalized_mu, edge_index_l, edge_weight_l, transmitters_index, activation='sigmoid')
+            if getattr(self.args, 'crop_p', 0) > 0:
+                p = torch.clamp(p, min=1e-5) # to avoid log(0) in calc_rates
+            return p
+        else:
+            p = torch.zeros_like(mu)
+            outputs_list = [p]
+            for block_id in range(self.args.primal_num_blocks):
+                x = torch.cat((p, mu/self.normalized_mu), dim=1)
+                p = p + self.sub_forward(block_id, x, edge_index_l, edge_weight_l, transmitters_index)
+                p = self.args.P_max * torch.sigmoid(p)
+                p = torch.clamp(p, min=1e-5)
+                outputs_list.append(p)
+            return outputs_list
     
-    def loss(self, rates, mu, p=None, constrained=False, metric='rates', constrained_subnetwork=None):
+    def loss(self, rates, mu, p=None, constraint_eps=None, metric='rates', constrained_subnetwork=None):
         if mu.shape[0] != self.num_graphs * self.args.n:
             num_graphs = mu.shape[0] // self.args.n
         else:
             num_graphs = self.num_graphs
-        rates, mu = rates.view(num_graphs, self.args.n), mu.view(num_graphs, self.args.n)
-        p = p.view(num_graphs, self.args.n)
-        L = lagrangian_fn(rates, mu, self.args.r_min, p=p, metric=metric, constrained_subnetwork=constrained_subnetwork).mean()
-        if not constrained:
-            return L
-        else:
-            raise NotImplementedError
 
-    def descending_constraints(self, output, target):
-        pass
+        if not isinstance(rates, list):
+            rates, mu = rates.view(num_graphs, self.args.n), mu.view(num_graphs, self.args.n)
+            p = p.view(num_graphs, self.args.n) if p is not None and not isinstance(p, list) else None
+            L = lagrangian_fn(rates, mu, self.args.r_min, p=p, metric=metric, constrained_subnetwork=constrained_subnetwork).mean()
+            constrained_loss = None
+        else:
+            assert constraint_eps is not None and p is not None
+            assert isinstance(p, list) and len(p) == len(rates)
+            lagrangian_list = []
+            for r_l, p_l in zip(rates, p):
+                r_l, mu_l, p_l = r_l.view(num_graphs, self.args.n), mu.view(num_graphs, self.args.n), p_l.view(num_graphs, self.args.n)
+                lagrangian_list.append(lagrangian_fn(r_l, mu_l, self.args.r_min, p=p_l, metric=metric, constrained_subnetwork=constrained_subnetwork))
+            constrained_loss = self.descending_constraints(torch.stack(lagrangian_list), constraint_eps)
+            
+        return lagrangian_list[-1].mean(), constrained_loss if constrained_loss is not None else torch.zeros_like(L.mean()).to(self.device)
+        
+
+
+    def descending_constraints(self, L_list, constraint_eps):
+        return (L_list[1:] - (1-constraint_eps) * L_list[:-1]).mean(-1)
+    
+
 
     def sanity_check(self, data, mu_test, noise_var, ss_param):
         data = data.to(self.device)
@@ -72,8 +116,10 @@ class PrimalModel(nn.Module):
             data.weighted_adjacency, data.weighted_adjacency_l, \
             data.transmitters_index, data.num_graphs
     
-        p_test = self.model(mu_test.detach(), edge_index_l, edge_weight_l, transmitters_index)
+        p_test = self(mu_test.detach(), edge_index_l, edge_weight_l, transmitters_index)
         gamma_test = torch.ones(num_graphs * self.args.n, 1).to(self.device) # user selection decisions are always the same (single Rx per Tx)
+        if self.unrolled:
+            p_test = p_test[-1]
         rates_test = calc_rates(p_test, gamma_test, a_l[:, :, :], noise_var, ss_param)
         rates_test, mu_test = rates_test.view(num_graphs, self.args.n), mu_test.view(num_graphs, self.args.n)
         p_test = p_test.view(num_graphs, self.args.n)
@@ -83,22 +129,25 @@ class PrimalModel(nn.Module):
 
 
 
+
+
+
 class DualModel(nn.Module):
     def __init__(self, args, device=None, eval_mode='unrolling'):
         super(DualModel, self).__init__()
         self.device = device
         self.eval_mode = eval_mode
-        self.num_blocks = args.num_blocks
         self.num_features_list = [2] + [args.dual_hidden_size] * args.dual_num_sublayers
         self.n = args.n
         self.P_max = args.P_max
         self.constrained_subnetwork = args.constrained_subnetwork
         self.resilient_weight_deacay = getattr(args, 'resilient_weight_decay', 0.0)
         self.normalized_mu = 1# args.mu_max if args.normalize_mu else 1
+        self.dual_num_blocks = args.dual_num_blocks if hasattr(args, 'dual_num_blocks') else args.num_blocks
 
         if eval_mode == 'unrolling':
             self.blocks = nn.ModuleList()
-            for _ in range(self.num_blocks):
+            for _ in range(self.dual_num_blocks):
                 if args.architecture == 'GNN':
                     self.blocks.append(GNN(self.num_features_list, 1.0, primal=False).to(device))
                 else:
@@ -112,7 +161,7 @@ class DualModel(nn.Module):
 
     def forward(self, block_id, mu, p, edge_index_l, edge_weight_l, transmitters_index):
         x = torch.cat((p/self.P_max, mu/self.normalized_mu), dim=1)
-        mu = self.blocks[block_id](x, edge_index_l, edge_weight_l, transmitters_index)
+        mu = self.blocks[block_id](x, edge_index_l, edge_weight_l, transmitters_index, activation=None)
         if self.constrained_subnetwork < 1:
             mu = mu.view(-1, self.n)
             mu = torch.cat([mu[:, :int(np.floor(self.constrained_subnetwork*self.n))], torch.zeros(mu.shape[0], int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)], dim=1)
@@ -137,7 +186,7 @@ class DualModel(nn.Module):
                 target = target.view(num_graphs, self.n)
                 L = ((mu[:, :int(np.floor(self.constrained_subnetwork*self.n))] - target[:, :int(np.floor(self.constrained_subnetwork*self.n))]) ** 2).mean(1)
             else:
-                L = -1 * lagrangian_fn(rates, mu, r_min, p=p, metric=metric, constrained_subnetwork=self.args.constrained_subnetwork)
+                L = -1 * lagrangian_fn(rates, mu, r_min, p=p, metric=metric, constrained_subnetwork=self.constrained_subnetwork)
                 
             # resilience loss
             if self.resilient_weight_deacay > 0:

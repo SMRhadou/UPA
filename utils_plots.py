@@ -96,6 +96,35 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
     fig.savefig(f'{pathname}/constrained_agents_comparison.png')
 
 
+    fig, ax = plt.subplots(2, 2, figsize=(8, 4))
+    for i, mode in enumerate(modes_list):
+        multipliers = np.stack(all_epoch_results[mode, 'test_mu_over_time'])[-1,:,-1]
+        multipliers = multipliers.reshape(multipliers.shape[0], -1, n)[:,:,:50]
+
+        ax[0,0].hist(multipliers.reshape(-1), bins=20, 
+                alpha=alpha, color=colors[mode], label=mode)
+        # ax[0,1].hist(multipliers[1,:].reshape(-1), bins=20, 
+        #         alpha=alpha, color=colors[mode], label=mode)
+        # ax[1,0].hist(multipliers[2,:].reshape(-1), bins=20, 
+        #         alpha=alpha, color=colors[mode], label=mode)
+        # ax[1,1].hist(multipliers[3,:].reshape(-1), bins=20, 
+        #         alpha=alpha, color=colors[mode], label=mode)
+        
+    ax[0,0].set_xlabel(r'$\mu_1$')
+    ax[0,0].set_ylabel('constrained agents')
+    ax[0,1].set_xlabel(r'$\mu_2$')
+    ax[1,0].set_xlabel(r'$\mu_3$')
+    ax[1,0].set_ylabel('unconstrained agents')
+    ax[1,1].set_xlabel(r'$\mu_4$')
+    ax[0,0].set_title(r'Dual variables')    
+    for i in range(2):
+        for j in range(2):
+            ax[i,j].legend()      
+    
+    fig.tight_layout()
+    fig.savefig(f'{pathname}/constrained_agents_comparison_mu.png')
+
+
 
 def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, num_iters=800, unrolling_iters=6, pathname=None):
     assert pathname is not None, 'Please provide a pathname to save the figures'

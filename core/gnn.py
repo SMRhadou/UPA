@@ -218,7 +218,6 @@ class PrimalGNN(torch.nn.Module):
         lambdas_embedding = kwargs.get('lambdas_embedding', None)
         self.lambdas_max = kwargs.get('lambdas_max', 0.0)
         self.conv_layer_normalize = kwargs.get("conv_layer_normalize", False)
-        self.primal = kwargs.get('primal', True)
 
         # self.resolve_lambdas_embedding(lambdas_embedding=lambdas_embedding, embed_dim=num_features_list[0])
         
@@ -250,7 +249,7 @@ class PrimalGNN(torch.nn.Module):
             raise NotImplementedError
 
     
-    def forward(self, y, edge_index, edge_weight, transmitters_index, batch = None):
+    def forward(self, y, edge_index, edge_weight, transmitters_index, batch = None, activation=None):
 
         if self.conv_layer_normalize:
             add_self_loops = True
@@ -269,10 +268,14 @@ class PrimalGNN(torch.nn.Module):
         # y = y / y.sum(dim = -1, keepdim = True).clamp(min = 1) # normalization layer
         y = self.gnn_backbone(y, edge_index, edge_weight, batch = batch) # derive node embeddings
         Tx_embeddings = self.b_p(scatter(y, transmitters_index, dim=0, reduce='mean')) 
-        if self.primal:      
+        if activation == 'sigmoid':      
             p = self.P_max * torch.sigmoid(Tx_embeddings) # derive power levels for transmitters
-        else:
+        elif activation == 'tanh':
+            p = torch.tanh(Tx_embeddings)
+        elif activation == None:
             p = Tx_embeddings
+        else:
+            raise NotImplementedError
             
         self.n_iters_trained += 1
         

@@ -71,7 +71,7 @@ class Trainer():
 
         gamma = torch.ones(num_graphs * self.args.n, 1).to(self.device)
         outputs_list = []
-        for block_id in range(self.dual_model.num_blocks):
+        for block_id in range(self.dual_model.dual_num_blocks):
             p = self.primal_model(mu, edge_index_l, edge_weight_l, transmitters_index)
             rates = calc_rates(p, gamma, a_l[:, :, :], self.noise_var, self.args.ss_param)
             L = self.primal_model.loss(rates, mu, p, constrained=False, metric='power' if self.primal_model.args.metric == 'power' else 'rates',
@@ -90,6 +90,8 @@ class Trainer():
         if self.args.use_wandb:
             wandb.log({'dual lagrangian loss': L.item()})
             wandb.log({'max_lambda': torch.max(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ].cpu()).item()})
+            wandb.log({'90th_percentile_lambda': torch.quantile(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ], 0.9).item()})
+            wandb.log({'10th_percentile_lambda': torch.quantile(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ], 0.1).item()})
             wandb.log({'mean rate': torch.mean(rates.view(num_graphs, self.args.n).mean(1).detach().cpu()).item()})
             wandb.log({'min rate': torch.min(rates.detach().cpu()).item()})
             wandb.log({'10th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.1).item()})
@@ -141,14 +143,33 @@ class Trainer():
                                              dist=self.args.mu_distribution, all_zeros=self.args.all_zeros).to(self.device)
                 p = self.primal_model(mu.detach(), edge_index_l, edge_weight_l, transmitters_index)    # MU is normalized to [0, 1]
                 gamma = torch.ones(num_samplers*num_graphs * self.args.n, 1).to(self.device) 
-                rates = calc_rates(p, gamma, a_l[:, :, :], self.noise_var, self.args.ss_param)
+                # if p is not a list
+                if not isinstance(p, list):
+                    rates = calc_rates(p, gamma, a_l[:, :, :], self.noise_var, self.args.ss_param)
+                else:
+                    rates = []
+                    for i in range(len(p)):
+                        rates.append(calc_rates(p[i], gamma, a_l[:, :, :], self.noise_var, self.args.ss_param))
 
-                loss = self.primal_model.loss(rates, mu, p, constrained=False, metric=self.args.metric, constrained_subnetwork=self.args.constrained_subnetwork)
+                loss, constraints_loss = self.primal_model.loss(rates, mu, p, constraint_eps=0.0, metric=self.args.metric, constrained_subnetwork=self.args.constrained_subnetwork)
+                L = loss + torch.sum(training_multipliers * constraints_loss)
+
+                if self.args.training_resilient_decay > 0:
+                    training_multipliers = (1-1/self.args.training_resilient_decay) * training_multipliers + self.args.lr_primal_multiplier * constraints_loss.detach()
+                    multiplier_update = True
+                else:
+                    training_multipliers = training_multipliers + self.args.lr_primal_multiplier * constraints_loss.detach()
+                    multiplier_update = True
+                training_multipliers = torch.maximum(training_multipliers, torch.zeros_like(training_multipliers))
+
                 self.primal_optimizer.zero_grad()
                 loss.backward()
                 self.primal_optimizer.step()
 
                 loss_list.append(loss.item())
+
+                if isinstance(p, list):
+                    rates, p = rates[-1], p[-1]
 
                 if self.args.use_wandb:
                     wandb.log({'primal training loss': loss.item()})
@@ -161,6 +182,8 @@ class Trainer():
                     wandb.log({'10th_percentile_P': torch.quantile(p.detach().cpu(), 0.1).item()})
                     wandb.log({'90th_percentile_P': torch.quantile(p.detach().cpu(), 0.9).item()})
                     wandb.log({'max P': torch.max(p.detach().cpu()).item()})
+                    if self.primal_model.unrolled:
+                        wandb.log({'primal constraint loss': torch.mean(constraints_loss.detach().cpu()).item()})
 
 
             else:
@@ -189,8 +212,10 @@ class Trainer():
                 # update the training multipliers with resilience
                 if self.args.training_resilient_decay > 0:
                     training_multipliers = (1-1/self.args.training_resilient_decay) * training_multipliers + self.args.lr_dual_multiplier * constraints_loss.detach()
+                    multiplier_update = True
                 else:
                     training_multipliers = training_multipliers + self.args.lr_dual_multiplier * constraints_loss.detach()
+                    multiplier_update = True
                 training_multipliers = torch.maximum(training_multipliers, torch.zeros_like(training_multipliers))
 
                 loss_list.append((loss + torch.maximum(constraints_loss, torch.zeros_like(constraints_loss)).sum()).item())
@@ -202,7 +227,7 @@ class Trainer():
                     wandb.log({'constraint loss': torch.mean(constraints_loss.detach().cpu()).item()})
                     
         
-        return np.stack(loss_list).mean(), training_multipliers if mode == 'dual' else None
+        return np.stack(loss_list).mean(), training_multipliers if multiplier_update else None
 
 
             
