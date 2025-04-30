@@ -55,16 +55,16 @@ def make_parser():
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
     parser.add_argument('--num_samplers', type=int, default=1, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=5000, help='Number of training epochs')
-    parser.add_argument('--num_epochs_dual', type=int, default=5000, help='Number of training epochs')
+    parser.add_argument('--num_epochs_dual', type=int, default=10000, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=1, help='Number of training cycles')
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_primal_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers in trainnig primal model')
-    parser.add_argument('--lr_dual_main', type=float, default=1e-6, help='Learning rate for dual networks')
+    parser.add_argument('--lr_dual_main', type=float, default=1e-4, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
-    parser.add_argument('--dual_resilient_decay', type=float, default=100.0, help='Resilient dual variables')
+    parser.add_argument('--dual_resilient_decay', type=float, default=1000.0, help='Resilient dual variables')
     parser.add_argument('--lr_DA_dual', type=float, default=1, help='Learning rate for dual variables in the DA algorithm')
-    parser.add_argument('--training_resilient_decay', type=float, default=100.0, help='Learning rate for resilient dual variables')
+    parser.add_argument('--training_resilient_decay', type=float, default=10.0, help='Learning rate for resilient dual variables')
     parser.add_argument('--thresh_resilient', type=float, default=2.5, help='Threshold for resilient dual variables')
     parser.add_argument('--evaluation_interval', type=int, default=500, help='Interval for evaluating the model')
     
@@ -82,7 +82,7 @@ def make_parser():
     parser.add_argument('--dual_num_blocks', type=int, default=4, help='Number of blocks in the dual model')
 
     parser.add_argument('--primal_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the GNN')
-    parser.add_argument('--dual_norm_layer', type=str, default='batch', choices=['batch', 'layer', 'graph'], help='Normalization layer for the dual model')
+    parser.add_argument('--dual_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the dual model')
     parser.add_argument('--dropout_rate', type=float, default=0.2, help='Dropout rate')
     parser.add_argument('--conv_layer_normalize', type=bool, default=False, help='Convolutional layer normalization')
     parser.add_argument('--normalize_mu', action='store_true', default=True, help='Normalize the dual variables while training the primal model')
@@ -154,9 +154,14 @@ def main(args):
     batch_size = {'train': args.batch_size, 'test': args.batch_size * args.num_samplers}
     loader = {}
 
+    if len(args.training_modes) == 1 and args.training_modes[0] == 'primal':
+        num_samples =  512
+    else:
+        num_samples = args.num_samples_train
+
     if not args.supervised:
         for phase in data_list:
-            loader[phase] = DataLoader(WirelessDataset(data_list[phase]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
+            loader[phase] = DataLoader(WirelessDataset(data_list[phase][:num_samples]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
     else:
         if os.path.exists('{}_target.json'.format(path)):
             data_list_supervised = torch.load('{}_target.json'.format(path), map_location='cpu')
@@ -175,7 +180,7 @@ def main(args):
             torch.save(data_list_supervised, path)
 
         for phase in data_list_supervised:
-            loader[phase] = DataLoader(WirelessDataset(data_list_supervised[phase]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
+            loader[phase] = DataLoader(WirelessDataset(data_list_supervised[phase][:num_samples]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
 
     # create a string indicating the main experiment (hyper)parameters
     experiment_name += '_ss_{}_resilience_{}_depth_{}_MUmax_{}_rMin_{}_lr_{}'.format(args.ss_param,
@@ -340,7 +345,7 @@ def main(args):
 
 
     # Plotting results
-    plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, unrolling_iters=args.num_blocks+1, pathname='./results/{}/figs'.format(experiment_name))
+    plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, unrolling_iters=args.dual_num_blocks+1, pathname='./results/{}/figs'.format(experiment_name))
     plot_final_percentiles_comparison(all_epoch_results, f_min=args.r_min, pathname='./results/{}/figs'.format(experiment_name))
     print('Training complete!')
     

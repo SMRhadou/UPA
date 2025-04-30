@@ -85,21 +85,27 @@ class PrimalModel(nn.Module):
             num_graphs = mu.shape[0] // self.args.n
         else:
             num_graphs = self.num_graphs
+        resilient_weight_deacay = getattr(self.args, 'dual_resilient_decay', 0.0)
 
         if not isinstance(rates, list):
             rates, mu = rates.view(num_graphs, self.args.n), mu.view(num_graphs, self.args.n)
             p = p.view(num_graphs, self.args.n) if p is not None and not isinstance(p, list) else None
             L = lagrangian_fn(rates, mu, self.args.r_min, p=p, metric=metric, constrained_subnetwork=constrained_subnetwork).mean()
+            if resilient_weight_deacay > 0:
+                L = L - (mu.norm(p=1, dim=1)**2/(2*resilient_weight_deacay)).mean()
             constrained_loss = None
         else:
             assert constraint_eps is not None and p is not None
             assert isinstance(p, list) and len(p) == len(rates)
             lagrangian_list = []
+            mu = mu.view(num_graphs, self.args.n)
             for r_l, p_l in zip(rates, p):
-                r_l, mu_l, p_l = r_l.view(num_graphs, self.args.n), mu.view(num_graphs, self.args.n), p_l.view(num_graphs, self.args.n)
-                lagrangian_list.append(lagrangian_fn(r_l, mu_l, self.args.r_min, p=p_l, metric=metric, constrained_subnetwork=constrained_subnetwork))
+                r_l, p_l = r_l.view(num_graphs, self.args.n), p_l.view(num_graphs, self.args.n)
+                lagrangian_list.append(lagrangian_fn(r_l, mu, self.args.r_min, p=p_l, metric=metric, constrained_subnetwork=constrained_subnetwork))
             constrained_loss = self.descending_constraints(torch.stack(lagrangian_list), constraint_eps)
             L = lagrangian_list[-1].mean()
+            if resilient_weight_deacay > 0:
+                L = L - (mu.norm(p=1, dim=1)**2/(2*resilient_weight_deacay)).mean()
             
         return L, constrained_loss if constrained_loss is not None else torch.zeros(self.primal_num_blocks).to(self.device)
         
@@ -227,7 +233,7 @@ class DualModel(nn.Module):
 
         # initialize
         if self.constrained_subnetwork < 1:
-            mu = torch.cat((0.01 * torch.rand(num_graphs, int(np.floor(self.constrained_subnetwork*self.n))).to(self.device), 
+            mu = torch.cat((mu_nan * torch.rand(num_graphs, int(np.floor(self.constrained_subnetwork*self.n))).to(self.device), 
                            mu_nan * torch.ones(num_graphs, int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)), dim=1)
             mu = mu.view(num_graphs * self.n, 1)
         else:

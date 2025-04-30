@@ -29,8 +29,8 @@ np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
 def main(R):
-    experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/'.format(R)
-    experiment_path += 'c3e6d9fd' if R == 2500 else 'c8e72391' # 1000 or 2000
+    experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_1000.0_depth_3_MUmax_10.0_rMin_2.0_lr_0.0001/'.format(R)
+    experiment_path += '6867d145' if R == 2500 else 'c8e72391' # 1000 or 2000
     # c820fc50 (2), 7841d161 (3)
 
     all_epoch_results = defaultdict(list)
@@ -47,10 +47,10 @@ def main(R):
     args.use_wandb = False
     args.adjust_constraints = False
  
-    # args.unrolled_primal = False
-    # args.constrained_subnetwork = 0.5
-    # args.normalize_mu = getattr(args, 'normalize_mu', False)
-    # args.mu_nan = 300
+    args.unrolled_primal = False
+    args.constrained_subnetwork = 0.5
+    args.normalize_mu = getattr(args, 'normalize_mu', False)
+    args.mu_nan = 300
     # args.primal_hidden_size = 256
     # args.primal_num_sublayers = 3
     # args.primal_k_hops = 2
@@ -62,7 +62,7 @@ def main(R):
     # data_path = './data/m_100_R_2500_Pmax_0_60.json'
     data_path = './data/{}_{}_train_{}_target.json'.format(experiment_path.split('/')[-2][:30], max_D_TxRx, args.num_samples_train)
     data_list = torch.load(data_path, map_location='cpu')
-    loader = DataLoader(WirelessDataset(data_list['test']), batch_size=64, shuffle=False)
+    loader = DataLoader(WirelessDataset(data_list['test']), batch_size=32, shuffle=False)
     del data_list
 
     # load model from checkpoint

@@ -65,7 +65,7 @@ class Trainer():
             data.edge_index_l, data.edge_weight_l, data.weighted_adjacency_l, \
             data.transmitters_index, data.num_graphs
         
-        mu = torch.cat((0.01 * torch.rand(num_graphs, int(np.floor(self.args.constrained_subnetwork*self.args.m))).to(self.device), 
+        mu = torch.cat((self.mu_nan * torch.rand(num_graphs, int(np.floor(self.args.constrained_subnetwork*self.args.m))).to(self.device), 
                         self.mu_nan * torch.ones(num_graphs, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
         mu = mu.view(num_graphs * self.args.n, 1)
 
@@ -88,7 +88,7 @@ class Trainer():
         outputs_list.append((mu, p, rates, L/self.args.n))
 
         if self.args.use_wandb:
-            wandb.log({'dual lagrangian loss': L.item()/self.n})
+            wandb.log({'dual lagrangian loss': L.item()/self.args.n})
             wandb.log({'max_lambda': torch.max(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ].cpu()).item()})
             wandb.log({'90th_percentile_lambda': torch.quantile(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ], 0.9).item()})
             wandb.log({'10th_percentile_lambda': torch.quantile(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ], 0.1).item()})
