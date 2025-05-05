@@ -39,7 +39,7 @@ def plot_testing(test_results, f_min, num_curves=20, pathname=None, num_agents=1
     ax[0,2].set_title('Rates per agent')
     ax[1,2].set_title('Rates per agent')
     fig.tight_layout()
-    fig.savefig(f'{pathname}/SA_test_results.png')
+    fig.savefig(f'{pathname}SA_test_results.png')
 
 
     fig, ax = plt.subplots(1, 2, figsize=(8, 3))
@@ -53,11 +53,11 @@ def plot_testing(test_results, f_min, num_curves=20, pathname=None, num_agents=1
     ax[0].set_title('Sum of rates per graph')
     ax[1].set_title('Sum of rates per graph')
     fig.tight_layout()
-    fig.savefig(f'{pathname}/rates.png')
+    fig.savefig(f'{pathname}rates.png')
     
 
 def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=None):
-    modes_list = ['SA', 'unrolling']
+    modes_list = ['SA']#, 'unrolling']
     fig, ax = plt.subplots(2, 2, figsize=(8, 4))
 
     colors = {'SA': 'darkorange', 'unrolling': 'green'}
@@ -93,7 +93,7 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
             ax[i,j].legend()
 
     fig.tight_layout()
-    fig.savefig(f'{pathname}/constrained_agents_comparison.png')
+    fig.savefig(f'{pathname}constrained_agents_comparison.png')
 
 
     fig, ax = plt.subplots(2, 2, figsize=(8, 4))
@@ -122,7 +122,7 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
             ax[i,j].legend()      
     
     fig.tight_layout()
-    fig.savefig(f'{pathname}/constrained_agents_comparison_mu.png')
+    fig.savefig(f'{pathname}constrained_agents_comparison_mu.png')
 
 
 
@@ -132,7 +132,7 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
     # Define consistent colors for modes
     colors = {'SA': 'darkorange', 'unrolling': 'green', 'random': 'lightblue', 'full_power': 'lightgray'}
     
-    modes_list = ['SA', 'unrolling']
+    modes_list = ['SA']#, 'unrolling']
     layer = -1
     for mode in modes_list:
         for graph in range(3):
@@ -164,14 +164,14 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
                 ax[1,2].plot(np.arange(start, iters), rates[-1,1,start:,i+graph*num_agents], label='agent {}'.format(i))
             ax[0,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,0,start:,6]), ':k', linewidth=1, label=r'r_min')
             ax[1,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,1,start:,6]), ':k', linewidth=1, label=r'r_min')
-            ax[0,2].set_xlim(start, iters)
-            ax[1,2].set_xlim(start, iters)
+            # ax[0,2].set_xlim(start, iters-1)
+            # ax[1,2].set_xlim(start, iters-1)
             ax[0,2].set_xlabel('rate')
             ax[1,2].set_xlabel('rate')
             ax[0,2].set_title('Rates')
             ax[1,2].set_title('Rates')
             fig.tight_layout()
-            fig.savefig(f'{pathname}/SA_results_{mode}_{graph}.png')
+            fig.savefig(f'{pathname}SA_results_{mode}_{graph}.png')
 
 
         fig, ax = plt.subplots(2, 3, figsize=(15, 9))
@@ -186,7 +186,7 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
             ax[i//3, i%3].set_title(f'training epoch {200*(i+1)}')
             ax[i//3, i%3].legend()
         fig.tight_layout()
-        fig.savefig(f'{pathname}/SA_mean_rates_{mode}.png')
+        fig.savefig(f'{pathname}SA_mean_rates_{mode}.png')
 
     fig, ax = plt.subplots(1, 2, figsize=(6, 3))
     for i, mode in enumerate(modes_list):
@@ -198,7 +198,16 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
         ax[i].set_ylabel('mean violation')
         ax[i].set_title(f'{mode}')
     fig.tight_layout()
-    fig.savefig(f'{pathname}/SA_mean_violation.png')
+    fig.savefig(f'{pathname}SA_mean_violation.png')
+
+    L_over_time = np.stack(all_epoch_results['SA', 'L_over_time'])
+    # one plot
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.plot(L_over_time.squeeze(0).mean(axis=0))
+    ax.set_xlabel('iterations')
+    ax.set_ylabel('Lagrangian')
+    fig.tight_layout()
+    fig.savefig(f'{pathname}SA_L_over_time.png')
 
 
 
@@ -222,6 +231,7 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     metrics = [
         ('rate_mean', 'Obj'),
         ('constrained_mean_rate', 'cons'),
+        ('unconstrained_mean_rate', 'uncons'),
         # ('rate_1th_percentile', '1%'),
         ('rate_5th_percentile', '5%'),
         ('rate_10th_percentile', '10%'),
@@ -235,7 +245,7 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     # Prepare data for all modes
     all_metric_values = []
     # Switched the order of 'random' and 'full_power'
-    mode_labels = ['SA', 'unrolling', 'full_power', 'random']
+    mode_labels = ['SA']#, 'unrolling', 'full_power', 'random']
     
     # Define consistent colors for modes
     colors = {'SA': 'darkorange', 'unrolling': 'green', 'random': 'lightblue', 'full_power': 'lightgray'}
@@ -290,7 +300,7 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     
     # Adjust layout and save
     fig.tight_layout()
-    fig.savefig(f'{pathname}/final_percentiles_comparison.png')
+    fig.savefig(f'{pathname}final_percentiles_comparison.png')
     
 
 def hist_power(test_results, P_max, name='random', pathname=None):

@@ -31,7 +31,7 @@ torch.manual_seed(RANDOM_SEED)
 
 def make_parser():
     # Argument parser
-    parser = argparse.ArgumentParser(description='State Augmented RRM GNN')
+    parser = argparse.ArgumentParser(description='DA Unrolling')
     # parser.add_argument('--random_seed', type=int, default=1357531, help='Random seed')
 
     # experiment setup
@@ -42,29 +42,29 @@ def make_parser():
     parser.add_argument('--density_mode', type=str, default='var_density', choices=['var_density', 'fixed_density'], help='Density mode')
     parser.add_argument('--BW', type=float, default=20e6, help='Bandwidth (Hz)')
     parser.add_argument('--P_maxdBm', type=float, default=0, help='Maximum transmit power (dBm)')
-    parser.add_argument('--r_min', type=float, default=2.0, help='Minimum-rate constraint')
+    parser.add_argument('--r_min', type=float, default=1.5, help='Minimum-rate constraint')
     parser.add_argument('--ss_param', type=float, default=1.0, help='Spread Spectrum parameter')
     parser.add_argument('--T_0', type=int, default=1, help='Size of the iteration window for averaging recent rates for dual variable updates')
     parser.add_argument('--metric', type=str, default='rates', choices=['rates', 'power'], help='Metric for rate calculation')
 
     # training parameters
-    parser.add_argument('--training_modes', type=list, default=['dual'], help='Training modes for the model')
+    parser.add_argument('--training_modes', type=list, default=['primal'], help='Training modes for the model')
     parser.add_argument('--supervised', action='store_true', default=False, help='Supervised training')
     parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
     parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
-    parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
-    parser.add_argument('--num_samplers', type=int, default=1, help='Number of samplers for the data loader')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch size/No. of graphs in a batch')
+    parser.add_argument('--num_samplers', type=int, default=32, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=5000, help='Number of training epochs')
     parser.add_argument('--num_epochs_dual', type=int, default=10000, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=1, help='Number of training cycles')
-    parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
+    parser.add_argument('--lr_main', type=float, default=1e-8, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_primal_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers in trainnig primal model')
     parser.add_argument('--lr_dual_main', type=float, default=1e-4, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
-    parser.add_argument('--dual_resilient_decay', type=float, default=1000.0, help='Resilient dual variables')
+    parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
     parser.add_argument('--lr_DA_dual', type=float, default=1, help='Learning rate for dual variables in the DA algorithm')
-    parser.add_argument('--training_resilient_decay', type=float, default=10.0, help='Learning rate for resilient dual variables')
+    parser.add_argument('--training_resilient_decay', type=float, default=0.0, help='Learning rate for resilient dual variables')
     parser.add_argument('--thresh_resilient', type=float, default=2.5, help='Threshold for resilient dual variables')
     parser.add_argument('--evaluation_interval', type=int, default=500, help='Interval for evaluating the model')
     
@@ -72,7 +72,7 @@ def make_parser():
     parser.add_argument('--primal_k_hops', type=int, default=2, help='Number of hops in the GNN')
     parser.add_argument('--primal_hidden_size', type=int, default=256, help='Number of GNN features in different layers')
     parser.add_argument('--primal_num_sublayers', type=int, default=3, help='Number of primal sub-layers')
-    parser.add_argument('--unrolled_primal', action='store_true', default=False, help='Unrolled primal model')
+    parser.add_argument('--unrolled_primal', action='store_true', default=True, help='Unrolled primal model')
     parser.add_argument('--primal_num_blocks', type=int, default=4, help='Number of blocks in the primal model')
 
 
@@ -82,14 +82,18 @@ def make_parser():
     parser.add_argument('--dual_num_blocks', type=int, default=4, help='Number of blocks in the dual model')
 
     parser.add_argument('--primal_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the GNN')
-    parser.add_argument('--dual_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the dual model')
+    parser.add_argument('--dual_norm_layer', type=str, default='batch', choices=['batch', 'layer', 'graph'], help='Normalization layer for the dual model')
     parser.add_argument('--dropout_rate', type=float, default=0.2, help='Dropout rate')
     parser.add_argument('--conv_layer_normalize', type=bool, default=False, help='Convolutional layer normalization')
-    parser.add_argument('--normalize_mu', action='store_true', default=True, help='Normalize the dual variables while training the primal model')
-    parser.add_argument('--mu_max', type=int, default=10.0, help='maximum value of the dual variables in the training set')
-    parser.add_argument('--mu_distribution', type=str, default='exponential', choices=['uniform', 'exponential'], help='Distribution of the dual variables')
-    parser.add_argument('--mu_nan', type=float, default=300.0, help='value of NaN in the dual variables')
-    parser.add_argument('--zero_probability', type=float, default=0.45, help='Probability of zeroing out the dual variables')
+    # dual distribution for primal training
+    parser.add_argument('--normalize_mu', action='store_true', default=False, help='Normalize the dual variables while training the primal model')
+    parser.add_argument('--mu_max', type=int, default=5.0, help='maximum value of the dual variables in the training set of the primal model')
+    parser.add_argument('--mu_distribution', type=str, default='uniform', choices=['uniform', 'exponential'], help='Distribution of the dual variables')
+    # dual variable values for unrolling
+    parser.add_argument('--mu_init', type=float, default=0.0, help='initial value of the dual variables in the training set')
+    parser.add_argument('--mu_uncons', type=float, default=0.0, help='value of lambda bar of the unconstrained users')
+
+    parser.add_argument('--zero_probability', type=float, default=0.2, help='Probability of zeroing out the dual variables')
     parser.add_argument('--all_zeros', action='store_true', default=True, help='Use all zeros for the dual variables')
     parser.add_argument('--constrained_subnetwork', type=float, default=0.5, help='impose constraints on part of the agents, 1 <==> full network')
     parser.add_argument('--architecture', type=str, default='PrimalGNN', help='Architecture of the model')
@@ -133,16 +137,19 @@ def main(args):
     os.makedirs('./data', exist_ok=True)
 
     # set the computation device and create the model using a GNN parameterization
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     primal_model = PrimalModel(args, device, unrolled=args.unrolled_primal) #normalize_mu)
     dual_model = DualModel(args, device)
 
     if args.training_modes[0] == 'dual':
-        if args. normalize_mu:
-            experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/bb3c2c94' #7fe6ab7b
+        if args.unrolled_primal:
+            experiment_path = './results/subnetwork_m_100_R_5000_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_60.0_rMin_1.5_lr_0.0001/7c3a5193' 
         else:
-            experiment_path = './results/m_100_R_2500_Pmax_0_ss_1.0_resilience_100.0_depth_3_MUmax_2.0_rMin_2.0_lr_1e-06/7fe6ab7b' #7fe6ab7b
-            assert args.normalize_mu == False, 'Normalization of mu is not supported for dual training'
+            if args. normalize_mu:
+                experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/bb3c2c94' #7fe6ab7b
+            else:
+                experiment_path = './results/m_100_R_2500_Pmax_0_ss_1.0_resilience_100.0_depth_3_MUmax_2.0_rMin_2.0_lr_1e-06/7fe6ab7b' #7fe6ab7b
+                assert args.normalize_mu == False, 'Normalization of mu is not supported for dual training'
         checkpoint = torch.load('{}/best_primal_model.pt'.format(experiment_path), map_location='cpu')
         primal_model.load_state_dict(checkpoint['model_state_dict'])
 
@@ -280,7 +287,7 @@ def main(args):
                                 torch.save(checkpoint, './results/{}/best_primal_model.pt'.format(experiment_name))
                                 if args.use_wandb:
                                     wandb.run.summary.update({"best_primal_loss": best_loss, "best_primal_epoch": epoch})
-                                    wandb.log({'epoch primal training loss': train_loss})
+                                    wandb.log({'best primal training loss': train_loss})
                             if mode == 'dual':
                                 # Save best dual model with metadata
                                 checkpoint = {
@@ -292,7 +299,7 @@ def main(args):
                                 torch.save(checkpoint, './results/{}/best_dual_model.pt'.format(experiment_name))
                                 if args.use_wandb:
                                     wandb.run.summary.update({"best_dual_loss": best_loss, "best_dual_epoch": epoch})
-                                    wandb.log({'epoch dual training loss': train_loss})
+                                    wandb.log({'best dual training loss': train_loss})
                     
                     else:
 

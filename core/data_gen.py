@@ -40,8 +40,8 @@ def create_data(m, n, T_eff, R, path, num_samples, P_max, noise_var):
             # reshape the channel matrices to get the weighted adjacency matrices as the basis for GNNs
             # instantaneous channel
             A[phase] = np.zeros((num_samples[phase], m+n, m+n, T))
-            A[phase][:, :m, m:, :] = np.expand_dims(associations[phase], 3) * H[phase]
-            A[phase][:, m:, :m, :] = np.transpose((np.expand_dims((1 - associations[phase]), 3) * H[phase]), (0, 2, 1, 3))
+            A[phase][:, :m, m:, :] = np.expand_dims(associations[phase], 3) * H[phase] #h_ii
+            A[phase][:, m:, :m, :] = np.transpose((np.expand_dims((1 - associations[phase]), 3) * H[phase]), (0, 2, 1, 3)) # h_ji  
             # long-term channel
             A_l[phase] = np.zeros((num_samples[phase], m+n, m+n))
             A_l[phase][:, :m, m:] = associations[phase] * H_l[phase]

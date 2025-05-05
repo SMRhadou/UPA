@@ -20,7 +20,7 @@ class Trainer():
         self.args = args
         self.dual_trained = kwargs.get('dual_trained', False)
         self.multipliers_table = []
-        self.mu_nan = args.mu_nan
+        self.mu_uncons = args.mu_uncons
         
 
 
@@ -37,7 +37,9 @@ class Trainer():
         
         zero_probability = dist_param[0] if len(dist_param) > 0 else 0.2
         if all_zeros:
-            zero_ids = torch.rand(num_samplers, 1) < zero_probability
+            mu_initial = mu_initial.view(-1, self.args.n)  # Ensure mu_initial is 2D
+            zero_ids = torch.rand(mu_initial.shape[0], 1) < zero_probability
+            zero_ids = zero_ids.repeat(1, mu_initial.shape[1])
             mu = torch.where(zero_ids, torch.zeros_like(mu_initial), mu_initial)
         else:
             zero_ids = torch.rand_like(mu_initial) < zero_probability
@@ -54,7 +56,7 @@ class Trainer():
         # if self.args.constrained_subnetwork < 1:
         #     mu = mu.view(-1, self.args.n)
         #     mu = torch.cat((mu[:, :int(np.floor(self.args.constrained_subnetwork*self.args.m))], 
-        #                     self.mu_nan * torch.ones(mu.shape[0], int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m)))), dim=1)
+        #                     self.mu_uncons * torch.ones(mu.shape[0], int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m)))), dim=1)
         
         return mu.view(-1, 1)
 
@@ -65,26 +67,30 @@ class Trainer():
             data.edge_index_l, data.edge_weight_l, data.weighted_adjacency_l, \
             data.transmitters_index, data.num_graphs
         
-        mu = torch.cat((self.mu_nan * torch.rand(num_graphs, int(np.floor(self.args.constrained_subnetwork*self.args.m))).to(self.device), 
-                        self.mu_nan * torch.ones(num_graphs, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
+        mu = torch.cat((self.args.mu_init * torch.rand(num_graphs, int(np.floor(self.args.constrained_subnetwork*self.args.m))).to(self.device), 
+                        self.mu_uncons * torch.ones(num_graphs, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
         mu = mu.view(num_graphs * self.args.n, 1)
 
         gamma = torch.ones(num_graphs * self.args.n, 1).to(self.device)
         outputs_list = []
         for block_id in range(self.dual_model.dual_num_blocks):
             p = self.primal_model(mu, edge_index_l, edge_weight_l, transmitters_index)
+            if isinstance(p, list):
+                p = p[-1]  # Use the last primal output if p is a list
             rates = calc_rates(p, gamma, a_l[:, :, :], self.noise_var, self.args.ss_param)
             L, _ = self.primal_model.loss(rates, mu, p, metric='power' if self.primal_model.args.metric == 'power' else 'rates',
-                                       constrained_subnetwork=self.args.constrained_subnetwork)
+                                       constrained_subnetwork=None)
             outputs_list.append((mu, p, rates, L/ self.args.n))
             mu = mu + self.dual_model(block_id, mu, p, edge_index_l, edge_weight_l, transmitters_index)
             mu = torch.relu(mu)
         
         # Primal recovery
         p = self.primal_model(mu, edge_index_l, edge_weight_l, transmitters_index)
+        if isinstance(p, list):
+            p = p[-1]
         rates = calc_rates(p, gamma, a_l[:, :, :], self.noise_var, self.args.ss_param)
         L, _ = self.primal_model.loss(rates, mu, p, metric='power' if self.primal_model.args.metric == 'power' else 'rates',
-                                   constrained_subnetwork=self.args.constrained_subnetwork) 
+                                   constrained_subnetwork=None) 
         outputs_list.append((mu, p, rates, L/self.args.n))
 
         if self.args.use_wandb:
@@ -132,7 +138,7 @@ class Trainer():
             if num_samplers > 1:
                 edge_index_l = edge_index_l.repeat(1, num_samplers)
                 edge_weight_l = edge_weight_l.repeat(num_samplers)
-                a_l = a_l.repeat(1, num_samplers, num_samplers)
+                a_l = a_l.repeat(num_samplers, 1, 1)
                 transmitters_index = torch.arange(num_samplers*self.args.n).to(self.device)
 
             if mode == 'primal':
@@ -151,9 +157,15 @@ class Trainer():
                     for i in range(len(p)):
                         rates.append(calc_rates(p[i], gamma, a_l[:, :, :], self.noise_var, self.args.ss_param))
 
-                loss, constraints_loss = self.primal_model.loss(rates, mu, p, constraint_eps=0.0, metric=self.args.metric, constrained_subnetwork=self.args.constrained_subnetwork)
+                loss, constraints_loss = self.primal_model.loss(rates, mu, p, constraint_eps=0.0, metric=self.args.metric, constrained_subnetwork=None)
                 L = loss + torch.sum(training_multipliers * constraints_loss)
 
+                # primal update
+                self.primal_optimizer.zero_grad()
+                L.backward()
+                self.primal_optimizer.step()
+
+                # dual update
                 if self.args.training_resilient_decay > 0:
                     training_multipliers = (1-1/self.args.training_resilient_decay) * training_multipliers + self.args.lr_primal_multiplier * constraints_loss.detach()
                     multiplier_update = True
@@ -162,25 +174,28 @@ class Trainer():
                     multiplier_update = True
                 training_multipliers = torch.maximum(training_multipliers, torch.zeros_like(training_multipliers))
 
-                self.primal_optimizer.zero_grad()
-                loss.backward()
-                self.primal_optimizer.step()
-
-                loss_list.append(loss.item())
+                loss_list.append((loss+torch.maximum(constraints_loss, torch.zeros_like(constraints_loss)).sum()).item())
 
                 if isinstance(p, list):
+                    for i in range(len(rates)):
+                        wandb.log({'mean rate at primal layer {}'.format(i): torch.mean(rates[i].view(num_graphs*num_samplers, self.args.n).mean(1).detach().cpu()).item()})
+                        if self.args.constrained_subnetwork < 1:
+                            wandb.log({'mean constrained rate at primal layer {}'.format(i): torch.mean(rates[i].view(num_graphs*num_samplers, self.args.n)[:, :int(np.floor(self.args.constrained_subnetwork*self.args.n))].mean(1).detach().cpu()).item()})
+                            wandb.log({'mean unconstrained rate at primal layer {}'.format(i): torch.mean(rates[i].view(num_graphs*num_samplers, self.args.n)[:, int(np.floor(self.args.constrained_subnetwork*self.args.n)):].mean(1).detach().cpu()).item()})
                     rates, p = rates[-1], p[-1]
 
                 if self.args.use_wandb:
                     wandb.log({'primal training loss': loss.item()})
                     wandb.log({'mean rate': torch.mean(rates.view(num_graphs*num_samplers, self.args.n).mean(1).detach().cpu()).item()})
                     wandb.log({'min rate': torch.min(rates.detach().cpu()).item()})
-                    wandb.log({'10th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.1).item()})
-                    wandb.log({'90th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.9).item()})
+                    wandb.log({'mean constrained rate': torch.mean(rates.view(num_graphs*num_samplers, self.args.n)[:, :int(np.floor(self.args.constrained_subnetwork*self.args.n))].mean(1).detach().cpu()).item()})
+                    wandb.log({'mean unconstrained rate': torch.mean(rates.view(num_graphs*num_samplers, self.args.n)[:, int(np.floor(self.args.constrained_subnetwork*self.args.n)):].mean(1).detach().cpu()).item()})
+                    wandb.log({'30th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.3).item()})
+                    wandb.log({'70th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.7).item()})
                     wandb.log({'max rate': torch.max(rates.detach().cpu()).item()})
                     wandb.log({'min P': torch.min(p.detach().cpu()).item()})
-                    wandb.log({'10th_percentile_P': torch.quantile(p.detach().cpu(), 0.1).item()})
-                    wandb.log({'90th_percentile_P': torch.quantile(p.detach().cpu(), 0.9).item()})
+                    wandb.log({'30th_percentile_P': torch.quantile(p.detach().cpu(), 0.3).item()})
+                    wandb.log({'70th_percentile_P': torch.quantile(p.detach().cpu(), 0.7).item()})
                     wandb.log({'max P': torch.max(p.detach().cpu()).item()})
                     if self.primal_model.unrolled:
                         wandb.log({'primal constraint loss': torch.mean(constraints_loss.detach().cpu()).item()})
@@ -234,6 +249,7 @@ class Trainer():
 
     def eval(self, loader, num_iters=None, **kwargs):
         adjust_constraints = kwargs.get('adjust_constraints', True)
+        fix_mu_uncons = kwargs.get('fix_mu_uncons', True)
 
         test_results = defaultdict(list)
         unrolling_results = defaultdict(list)
@@ -243,8 +259,9 @@ class Trainer():
             # DA
             mu_over_time, L_over_time, all_Ps, all_rates, violation_dict = \
                 self.dual_model.DA(self.primal_model, data, self.args.lr_DA_dual, self.args.dual_resilient_decay, 
-                                        self.args.n, self.args.r_min, self.noise_var, num_iters, self.args.ss_param, self.mu_nan, self.device,
-                                        adjust_constraints)
+                                        self.args.n, self.args.r_min, self.noise_var, num_iters, self.args.ss_param, 
+                                        self.args.mu_init, self.mu_uncons, self.device,
+                                        adjust_constraints, fix_mu_uncons)
             violation = violation_dict['violation']
 
             constrained_agents = int(np.floor(self.args.constrained_subnetwork*self.args.n)) 
@@ -260,6 +277,8 @@ class Trainer():
             test_results['mean_violation'].append(violation.mean().item())
             test_results['violation_rate'].append(violation_dict['violation_rate'])
             test_results['constrained_mean_rate'].append(violation_dict['constrained_rate_mean'])
+            test_results['unconstrained_mean_rate'].append(violation_dict['unconstrained_rate_mean'])
+            test_results['L_over_time'].append(torch.stack(L_over_time).detach().cpu().numpy())
 
 
             slack_value = violation_dict['slack_value'] if adjust_constraints else 0
@@ -287,6 +306,7 @@ class Trainer():
                 # unrolling_results['violation_rate'].append(violation_rate.item())
                 unrolling_results['mean_violation'].append(violation.mean().item())
                 unrolling_results['constrained_mean_rate'].append(torch.mean(rates.view(data.num_graphs, self.args.n)[:, :constrained_agents].mean(1).detach().cpu()).tolist())
+                unrolling_results['unconstrained_mean_rate'].append(torch.mean(rates.view(data.num_graphs, self.args.n)[:, constrained_agents:].mean(1).detach().cpu()).tolist())
             
             # random policy
             # p = torch.relu_(P_max * (torch.randn(num_graphs * n).to(device) + 0.5)/2)
@@ -305,6 +325,7 @@ class Trainer():
             randPolicy_results['violation_rate'].append(violation_rate.item())
             randPolicy_results['mean_violation'].append(violation.mean().item())
             randPolicy_results['constrained_mean_rate'].append(torch.mean(rates.view(data.num_graphs, self.args.n)[:, :constrained_agents].mean(1).detach().cpu()).tolist())
+            randPolicy_results['unconstrained_mean_rate'].append(torch.mean(rates.view(data.num_graphs, self.args.n)[:, constrained_agents:].mean(1).detach().cpu()).tolist())
 
 
             # Full power
@@ -322,5 +343,6 @@ class Trainer():
             full_power_results['violation_rate'].append(violation_rate.item())
             full_power_results['mean_violation'].append(violation.mean().item())
             full_power_results['constrained_mean_rate'].append(torch.mean(rates.view(data.num_graphs, self.args.n)[:, :constrained_agents].mean(1).detach().cpu()).tolist())
+            full_power_results['unconstrained_mean_rate'].append(torch.mean(rates.view(data.num_graphs, self.args.n)[:, constrained_agents:].mean(1).detach().cpu()).tolist())
 
         return test_results, unrolling_results if self.dual_trained else None, randPolicy_results, full_power_results
