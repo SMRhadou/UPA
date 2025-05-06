@@ -76,8 +76,8 @@ class PrimalModel(nn.Module):
         if not self.unrolled:
             input = torch.cat((mu/self.normalized_mu, self.cons_lvl), dim=1)  # mu is normalized
             p = self.model(input, edge_index_l, edge_weight_l, transmitters_index, activation='sigmoid')
-            if getattr(self.args, 'crop_p', 0) > 0:
-                p = torch.clamp(p, min=1e-5) # to avoid log(0) in calc_rates
+            # if getattr(self.args, 'crop_p', 0) > 0:
+            #     p = torch.clamp(p, min=1e-5) # to avoid log(0) in calc_rates
             return p
         else:
             p = torch.zeros_like(mu)
@@ -86,7 +86,7 @@ class PrimalModel(nn.Module):
                 x = torch.cat((p, mu/self.normalized_mu, self.cons_lvl), dim=1)
                 p = p + self.sub_forward(block_id, x, edge_index_l, edge_weight_l, transmitters_index)
                 p = self.args.P_max * torch.sigmoid(p)
-                p = torch.clamp(p, min=1e-5)
+                # p = torch.clamp(p, min=1e-5)
                 outputs_list.append(p)
             return outputs_list
     
@@ -102,6 +102,8 @@ class PrimalModel(nn.Module):
             p = p.view(num_graphs, self.args.n) if p is not None and not isinstance(p, list) else None
             L = lagrangian_fn(rates, mu, self.cons_lvl, p=p, metric=metric, constrained_subnetwork=constrained_subnetwork).mean()
             if resilient_weight_deacay > 0:
+                if constrained_subnetwork is not None:
+                    mu = mu[1:, :int(np.floor(constrained_subnetwork*self.args.n))] 
                 L = L - (mu.norm(p=1, dim=1)**2/(2*resilient_weight_deacay)).mean()
             constrained_loss = None
         else:
@@ -115,6 +117,8 @@ class PrimalModel(nn.Module):
             constrained_loss = self.descending_constraints(torch.stack(lagrangian_list), constraint_eps)
             L = lagrangian_list[-1].mean()
             if resilient_weight_deacay > 0:
+                if constrained_subnetwork is not None:
+                    mu = mu[:, :int(np.floor(constrained_subnetwork*self.args.n))]
                 L = L - (mu.norm(p=1, dim=1)**2/(2*resilient_weight_deacay)).mean()
             
         return L, constrained_loss if constrained_loss is not None else torch.zeros(self.primal_num_blocks).to(self.device)
@@ -270,8 +274,8 @@ class DualModel(nn.Module):
             gamma = torch.ones(num_graphs * n, 1).to(device) # user selection decisions are always the same (single Rx per Tx)
             rates = calc_rates(p.detach(), gamma, a_l[:, :, :], noise_var,ss_param)
             L, _ = primal_model.loss(rates, mu, p, 
-                                    metric='power' if hasattr(primal_model.args, 'metric') and primal_model.args.metric == 'power' else 'rates',
-                                    constrained_subnetwork=self.constrained_subnetwork)
+                                    metric='power' if hasattr(primal_model.args, 'metric') and primal_model.args.metric == 'power' else 'rates')
+                                    # constrained_subnetwork=self.constrained_subnetwork if fix_mu_uncons else None)
 
             # update the dual variables
             if resilient_weight_decay > 0:

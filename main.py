@@ -16,7 +16,7 @@ from torch_geometric.loader import DataLoader
 from core.data_gen import create_data
 from core.channel import max_D_TxRx
 from utils import WirelessDataset, simple_policy
-from utils_plots import plotting_SA, plot_final_percentiles_comparison
+from utils_plots import plotting_SA, plot_final_percentiles_comparison, plot_testing
 
 from core.trainer import Trainer
 from core.modules import PrimalModel, DualModel
@@ -42,7 +42,7 @@ def make_parser():
     parser.add_argument('--density_mode', type=str, default='var_density', choices=['var_density', 'fixed_density'], help='Density mode')
     parser.add_argument('--BW', type=float, default=20e6, help='Bandwidth (Hz)')
     parser.add_argument('--P_maxdBm', type=float, default=0, help='Maximum transmit power (dBm)')
-    parser.add_argument('--r_min', type=float, default=1.5, help='Minimum-rate constraint')
+    parser.add_argument('--r_min', type=float, default=2.0, help='Minimum-rate constraint')
     parser.add_argument('--ss_param', type=float, default=1.0, help='Spread Spectrum parameter')
     parser.add_argument('--T_0', type=int, default=1, help='Size of the iteration window for averaging recent rates for dual variable updates')
     parser.add_argument('--metric', type=str, default='rates', choices=['rates', 'power'], help='Metric for rate calculation')
@@ -53,17 +53,17 @@ def make_parser():
     parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
     parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size/No. of graphs in a batch')
-    parser.add_argument('--num_samplers', type=int, default=32, help='Number of samplers for the data loader')
+    parser.add_argument('--num_samplers', type=int, default=128, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=5000, help='Number of training epochs')
     parser.add_argument('--num_epochs_dual', type=int, default=10000, help='Number of training epochs')
-    parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
+    parser.add_argument('--num_iters', type=int, default=200, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=1, help='Number of training cycles')
-    parser.add_argument('--lr_main', type=float, default=1e-8, help='Learning rate for primal model parameters')
+    parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_primal_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers in trainnig primal model')
     parser.add_argument('--lr_dual_main', type=float, default=1e-4, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
     parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
-    parser.add_argument('--lr_DA_dual', type=float, default=1, help='Learning rate for dual variables in the DA algorithm')
+    parser.add_argument('--lr_DA_dual', type=float, default=0.1, help='Learning rate for dual variables in the DA algorithm')
     parser.add_argument('--training_resilient_decay', type=float, default=0.0, help='Learning rate for resilient dual variables')
     parser.add_argument('--thresh_resilient', type=float, default=2.5, help='Threshold for resilient dual variables')
     parser.add_argument('--evaluation_interval', type=int, default=500, help='Interval for evaluating the model')
@@ -90,7 +90,7 @@ def make_parser():
     parser.add_argument('--mu_max', type=int, default=5.0, help='maximum value of the dual variables in the training set of the primal model')
     parser.add_argument('--mu_distribution', type=str, default='uniform', choices=['uniform', 'exponential'], help='Distribution of the dual variables')
     # dual variable values for unrolling
-    parser.add_argument('--mu_init', type=float, default=0.0, help='initial value of the dual variables in the training set')
+    parser.add_argument('--mu_init', type=float, default=10.0, help='initial value of the dual variables in the training set')
     parser.add_argument('--mu_uncons', type=float, default=0.0, help='value of lambda bar of the unconstrained users')
 
     parser.add_argument('--zero_probability', type=float, default=0.2, help='Probability of zeroing out the dual variables')
@@ -137,7 +137,7 @@ def main(args):
     os.makedirs('./data', exist_ok=True)
 
     # set the computation device and create the model using a GNN parameterization
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     primal_model = PrimalModel(args, device, unrolled=args.unrolled_primal) #normalize_mu)
     dual_model = DualModel(args, device)
 
@@ -287,7 +287,11 @@ def main(args):
                                 torch.save(checkpoint, './results/{}/best_primal_model.pt'.format(experiment_name))
                                 if args.use_wandb:
                                     wandb.run.summary.update({"best_primal_loss": best_loss, "best_primal_epoch": epoch})
-                                    wandb.log({'best primal training loss': train_loss})
+                                    wandb.log({'best primal training loss': train_loss})    
+
+                                primal_results = trainer.eval_primal(loader['test'], num_iters=args.num_iters)  
+                                plot_testing(primal_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, pathname='./results/{}/figs/{}_'.format(experiment_name, epoch))
+
                             if mode == 'dual':
                                 # Save best dual model with metadata
                                 checkpoint = {

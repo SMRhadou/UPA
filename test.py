@@ -40,8 +40,8 @@ def main(experiment_path, mu_uncons=0.0):
     # experiment_path += '0e3c6b25'
     # experiment_path ='results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_20.0_rMin_2.25_lr_1e-08/'
     # experiment_path += '410a8c19'
-    experiment_path ='results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_20.0_rMin_2.25_lr_1e-08/'
-    experiment_path += 'acfba004'
+    # experiment_path ='results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_20.0_rMin_2.25_lr_1e-08/'
+    # experiment_path += 'acfba004'
 
     all_epoch_results = defaultdict(list)
     # read args file as adictionary
@@ -73,11 +73,11 @@ def main(experiment_path, mu_uncons=0.0):
     # data_path = './data/m_100_R_2500_Pmax_0_60.json'
     data_path = './data/{}_{}_train_{}.json'.format(experiment_path.split('/')[-2][:30], max_D_TxRx, args.num_samples_train)
     data_list = torch.load(data_path, map_location='cpu')
-    loader = DataLoader(WirelessDataset(data_list['test']), batch_size=32, shuffle=False)
+    loader = DataLoader(WirelessDataset(data_list['test']), batch_size=1, shuffle=False)
     del data_list
 
     # load model from checkpoint
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     primal_model = PrimalModel(args, device, unrolled=args.unrolled_primal)
     dual_model = DualModel(args, device)
     if args.training_modes[0] == 'dual':
@@ -149,10 +149,11 @@ def main(experiment_path, mu_uncons=0.0):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DA Unrolling - Wireless Allocation Test')
-    parser.add_argument('--experiment_path', type=str, default='subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_20.0_rMin_2.25_lr_1e-08/acfba004')
+    parser.add_argument('--experiment_path', type=str, default='subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_1e-06/d52b0178')
     test_args = parser.parse_args()
 
-    for mu_uncons in [0.0, 5.0, 20.0, 100.0]:
+    for mu_uncons in [0.0]:
+        print(test_args.experiment_path, mu_uncons)
         main('results/{}'.format(test_args.experiment_path), mu_uncons=mu_uncons)
     print('ok!')
 

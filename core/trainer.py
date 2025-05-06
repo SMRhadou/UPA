@@ -53,10 +53,10 @@ class Trainer():
                 torch.stack(self.multipliers_table).view(-1, self.args.n)[indices].to(self.device)
             ), dim=0)
 
-        # if self.args.constrained_subnetwork < 1:
-        #     mu = mu.view(-1, self.args.n)
-        #     mu = torch.cat((mu[:, :int(np.floor(self.args.constrained_subnetwork*self.args.m))], 
-        #                     self.mu_uncons * torch.ones(mu.shape[0], int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m)))), dim=1)
+        if self.args.constrained_subnetwork < 1:
+            mu = mu.view(-1, self.args.n)
+            mu = torch.cat((mu[:, :int(np.floor(self.args.constrained_subnetwork*self.args.m))], 
+                            self.mu_uncons * torch.ones(mu.shape[0], int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m)))), dim=1)
         
         return mu.view(-1, 1)
 
@@ -136,8 +136,18 @@ class Trainer():
             
             loss_list = []
             if num_samplers > 1:
-                edge_index_l = edge_index_l.repeat(1, num_samplers)
-                edge_weight_l = edge_weight_l.repeat(num_samplers)
+                # Create num_samplers copies of the graph
+                edge_index_expanded = []
+                edge_weight_expanded = []
+                for s in range(num_samplers):
+                    offset = s * self.args.n
+                    curr_edge_index = edge_index_l.clone()
+                    curr_edge_index += offset
+                    edge_index_expanded.append(curr_edge_index)
+                    edge_weight_expanded.append(edge_weight_l)
+
+                edge_index_l = torch.cat(edge_index_expanded, dim=1)
+                edge_weight_l = torch.cat(edge_weight_expanded)
                 a_l = a_l.repeat(num_samplers, 1, 1)
                 transmitters_index = torch.arange(num_samplers*self.args.n).to(self.device)
 
@@ -145,8 +155,19 @@ class Trainer():
                 self.primal_model.train()
                 self.dual_model.eval()
                 
-                mu = self.multiplier_sampler(num_graphs*num_samplers*self.args.n, self.args.mu_max, self.args.zero_probability, 
-                                             dist=self.args.mu_distribution, all_zeros=self.args.all_zeros).to(self.device)
+                # mu = self.multiplier_sampler(num_graphs*num_samplers*self.args.n, self.args.mu_max, self.args.zero_probability, 
+                #                              dist=self.args.mu_distribution, all_zeros=self.args.all_zeros).to(self.device)
+                if hasattr(self.primal_model, 'cons_lvl'):
+                    delattr(self.primal_model, 'cons_lvl')
+                mu_over_time, _, _, _, _ = self.dual_model.DA(self.primal_model, data, 0.1, 100, 
+                                                                self.args.n, self.args.r_min, self.noise_var, self.args.num_iters, self.args.ss_param, 
+                                                                self.args.mu_init, self.mu_uncons, self.device, False, True)
+                delattr(self.primal_model, 'cons_lvl')
+                mu_over_time = torch.stack(mu_over_time).reshape(self.args.num_iters, -1, self.args.n)[:,-1]
+                # Choose 32 random rows from mu_over_time
+                selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers]
+                mu = mu_over_time[selected_indices].view(-1,1).to(self.device)
+
                 p = self.primal_model(mu.detach(), edge_index_l, edge_weight_l, transmitters_index)    # MU is normalized to [0, 1]
                 gamma = torch.ones(num_samplers*num_graphs * self.args.n, 1).to(self.device) 
                 # if p is not a list
@@ -245,6 +266,37 @@ class Trainer():
         return np.stack(loss_list).mean(), training_multipliers if multiplier_update else None
 
 
+    def eval_primal(self, loader, num_iters=None, **kwargs):
+        adjust_constraints = kwargs.get('adjust_constraints', True)
+        fix_mu_uncons = kwargs.get('fix_mu_uncons', True)
+
+        test_results = defaultdict(list)
+        for data, _ in loader:
+            # DA
+            mu_over_time, L_over_time, all_Ps, all_rates, violation_dict = \
+                self.dual_model.DA(self.primal_model, data, 0.1, 100, #self.args.lr_DA_dual, self.args.dual_resilient_decay, 
+                                        self.args.n, self.args.r_min, self.noise_var, num_iters, self.args.ss_param, 
+                                        self.args.mu_init, self.mu_uncons, self.device,
+                                        adjust_constraints, fix_mu_uncons)
+        violation = violation_dict['violation']
+
+        constrained_agents = int(np.floor(self.args.constrained_subnetwork*self.args.n)) 
+        percentile_list = [5, 10, 15, 20, 30, 40, 50]
+
+        test_results['rate_mean'].append(violation_dict['rate_mean'])
+        test_results['all_Ps'].append(torch.stack(all_Ps).detach().cpu())
+        test_results['all_rates'].append(torch.stack(all_rates).detach().cpu())
+        test_results['test_mu_over_time'].append(torch.stack(mu_over_time).detach().cpu())
+        test_results['test_L_over_time'].append(torch.stack(L_over_time).detach().cpu())
+        for percentile in percentile_list:
+            test_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(data.num_graphs, self.args.n)[:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
+        test_results['mean_violation'].append(violation.mean().item())
+        test_results['violation_rate'].append(violation_dict['violation_rate'])
+        test_results['constrained_mean_rate'].append(violation_dict['constrained_rate_mean'])
+        test_results['unconstrained_mean_rate'].append(violation_dict['unconstrained_rate_mean'])
+        test_results['L_over_time'].append(torch.stack(L_over_time).detach().cpu().numpy())
+
+        return test_results
             
 
     def eval(self, loader, num_iters=None, **kwargs):
@@ -273,7 +325,7 @@ class Trainer():
             test_results['test_mu_over_time'].append(torch.stack(mu_over_time).detach().cpu())
             test_results['test_L_over_time'].append(torch.stack(L_over_time).detach().cpu())
             for percentile in percentile_list:
-                test_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(data.num_graphs, self.args.n)[:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
+                test_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(-1, self.args.n)[1:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
             test_results['mean_violation'].append(violation.mean().item())
             test_results['violation_rate'].append(violation_dict['violation_rate'])
             test_results['constrained_mean_rate'].append(violation_dict['constrained_rate_mean'])
@@ -319,7 +371,7 @@ class Trainer():
             randPolicy_results['rate_mean'].append(torch.mean(rates.view(data.num_graphs, self.args.n).mean(1).detach().cpu()).tolist())
             randPolicy_results['rate_min'].append(torch.min(rates.detach().cpu()).tolist())
             for percentile in percentile_list:
-                    randPolicy_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(data.num_graphs, self.args.n)[:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
+                    randPolicy_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(-1, self.args.n)[1:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
             randPolicy_results['all_Ps'].append(p.detach().cpu().numpy())
             randPolicy_results['all_rates'].append(rates.detach().cpu().numpy())
             randPolicy_results['violation_rate'].append(violation_rate.item())
@@ -337,7 +389,7 @@ class Trainer():
             full_power_results['rate_mean'].append(torch.mean(rates.view(data.num_graphs, self.args.n).mean(1).detach().cpu()).tolist())
             full_power_results['rate_min'].append(torch.min(rates.detach().cpu()).tolist())
             for percentile in percentile_list:
-                    full_power_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(data.num_graphs, self.args.n)[:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
+                    full_power_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(-1, self.args.n)[1:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
             full_power_results['all_Ps'].append(p.detach().cpu().numpy())
             full_power_results['all_rates'].append(rates.detach().cpu().numpy())
             full_power_results['violation_rate'].append(violation_rate.item())

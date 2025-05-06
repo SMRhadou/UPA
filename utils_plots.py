@@ -5,32 +5,32 @@ plt.rc('text', usetex=True)
 plt.rc('text.latex', preamble=r'\usepackage{amsmath}')
 
 
-def plot_testing(test_results, f_min, num_curves=20, pathname=None, num_agents=100, num_iters=400, batch_size=32):
+def plot_testing(test_results, f_min, P_max, num_curves=15, num_agents=100, num_iters=400, batch_size=32, pathname=None,):
     assert pathname is not None, 'Please provide a pathname to save the figures'
     fig, ax = plt.subplots(2, 3, figsize=(12, 6))
-    multipliers = np.stack(test_results['test_mu_over_time'])
+    multipliers = np.stack(test_results['test_mu_over_time']).squeeze().reshape(num_iters, -1, num_agents)
     for i in range(num_curves):
-        ax[0, 0].plot(multipliers[0,:,i], label='agent {}'.format(i))
-        ax[1, 0].plot(multipliers[1,:,i], label='agent {}'.format(i))
+        ax[0, 0].plot(multipliers[:,0,i], label='agent {}'.format(i))
+        ax[1, 0].plot(multipliers[:,1,i], label='agent {}'.format(i))
     ax[0, 0].set_xlabel('iterations')
     ax[1, 0].set_xlabel('iterations')
     ax[0, 0].set_title('Dual Variables')
     ax[1, 0].set_title('Dual Variables')
-    
-    power_allocated = np.stack(test_results['all_Ps'])
+
+    power_allocated = np.stack(test_results['all_Ps']).squeeze().reshape(num_iters, -1, num_agents)
     for i in range(num_curves):
-        ax[0,1].plot(power_allocated[0,:,i], label='agent {}'.format(i))
-        ax[1,1].plot(power_allocated[1,:,i], label='agent {}'.format(i)) 
+        ax[0,1].plot(power_allocated[:,0,i]/P_max, label='agent {}'.format(i))
+        ax[1,1].plot(power_allocated[:,1,i]/P_max, label='agent {}'.format(i)) 
     ax[0,1].set_xlabel('iterations')
     ax[1,1].set_xlabel('iterations')
     # ax[1].legend()
     ax[0,1].set_title('Power allocated')
     ax[1,1].set_title('Power allocated')
 
-    rates = np.stack(test_results['all_rates'])
+    rates = np.stack(test_results['all_rates']).squeeze().reshape(num_iters, -1, num_agents)
     for i in range(num_curves):
-        ax[0,2].plot(rates[0,:,i], label='agent {}'.format(i))
-        ax[1,2].plot(rates[1,:,i], label='agent {}'.format(i))
+        ax[0,2].plot(rates[:,0,i], label='agent {}'.format(i))
+        ax[1,2].plot(rates[:,1,i], label='agent {}'.format(i))
     ax[0,2].plot(f_min*np.ones_like(rates[0,:,6]), ':k', linewidth=1, label=r'r_min')
     ax[1,2].plot(f_min*np.ones_like(rates[1,:,6]), ':k', linewidth=1, label=r'r_min')
     # ax[2].legend()
@@ -43,10 +43,10 @@ def plot_testing(test_results, f_min, num_curves=20, pathname=None, num_agents=1
 
 
     fig, ax = plt.subplots(1, 2, figsize=(8, 3))
-    rate_mean = np.stack(test_results['all_rates']).reshape(-1, num_iters, batch_size, num_agents).sum(-1)
+    rate_mean = np.stack(test_results['all_rates']).reshape(num_iters, -1, num_agents).sum(-1)
     for i in range(num_curves):
-        ax[0].plot(rate_mean[0,:,i], label='graph {}'.format(i))
-        ax[1].plot(rate_mean[1,:,i], label='graph {}'.format(i))
+        ax[0].plot(rate_mean[:,0], label='graph {}'.format(i))
+        ax[1].plot(rate_mean[:,1], label='graph {}'.format(i))
     ax[0].set_xlabel('iterations')
     ax[1].set_xlabel('iterations')
     # ax[0].legend()
@@ -54,7 +54,18 @@ def plot_testing(test_results, f_min, num_curves=20, pathname=None, num_agents=1
     ax[1].set_title('Sum of rates per graph')
     fig.tight_layout()
     fig.savefig(f'{pathname}rates.png')
-    
+
+
+    L_over_time = np.stack(test_results['L_over_time'])
+    # one plot
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.plot(L_over_time.squeeze(0))
+    ax.set_xlabel('iterations')
+    ax.set_ylabel('Lagrangian')
+    fig.tight_layout()
+    print(pathname)
+    fig.savefig(f'{pathname}SA_L_over_time.png')
+
 
 def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=None):
     modes_list = ['SA']#, 'unrolling']
@@ -126,13 +137,17 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
 
 
 
-def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, num_iters=800, unrolling_iters=6, pathname=None):
+def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, num_iters=800, unrolling_iters=6, pathname=None, all=True):
     assert pathname is not None, 'Please provide a pathname to save the figures'
 
     # Define consistent colors for modes
     colors = {'SA': 'darkorange', 'unrolling': 'green', 'random': 'lightblue', 'full_power': 'lightgray'}
     
-    modes_list = ['SA']#, 'unrolling']
+    if all:
+        modes_list = ['SA']#, 'unrolling']
+    else:
+        modes_list = ['SA']
+
     layer = -1
     for mode in modes_list:
         for graph in range(3):
@@ -207,6 +222,7 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
     ax.set_xlabel('iterations')
     ax.set_ylabel('Lagrangian')
     fig.tight_layout()
+    print(pathname)
     fig.savefig(f'{pathname}SA_L_over_time.png')
 
 
