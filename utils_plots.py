@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 plt.rc('font', family='serif', serif='cm10')
 plt.rc('text', usetex=True)
@@ -9,9 +10,11 @@ def plot_testing(test_results, f_min, P_max, num_curves=15, num_agents=100, num_
     assert pathname is not None, 'Please provide a pathname to save the figures'
     fig, ax = plt.subplots(2, 3, figsize=(12, 6))
     multipliers = np.stack(test_results['test_mu_over_time']).squeeze().reshape(num_iters, -1, num_agents)
+    # Define distinct colors for different agents
+    colors = plt.cm.tab20(np.linspace(0, 1, num_curves))
     for i in range(num_curves):
-        ax[0, 0].plot(multipliers[:,0,i], label='agent {}'.format(i))
-        ax[1, 0].plot(multipliers[:,1,i], label='agent {}'.format(i))
+        ax[0, 0].plot(multipliers[:,0,i]/15, label='agent {}'.format(i), color=colors[i])
+        ax[1, 0].plot(multipliers[:,1,i]/15, label='agent {}'.format(i), color=colors[i])
     ax[0, 0].set_xlabel('iterations')
     ax[1, 0].set_xlabel('iterations')
     ax[0, 0].set_title('Dual Variables')
@@ -19,8 +22,8 @@ def plot_testing(test_results, f_min, P_max, num_curves=15, num_agents=100, num_
 
     power_allocated = np.stack(test_results['all_Ps']).squeeze().reshape(num_iters, -1, num_agents)
     for i in range(num_curves):
-        ax[0,1].plot(power_allocated[:,0,i]/P_max, label='agent {}'.format(i))
-        ax[1,1].plot(power_allocated[:,1,i]/P_max, label='agent {}'.format(i)) 
+        ax[0,1].plot(power_allocated[:,0,i]/P_max, label='agent {}'.format(i), color=colors[i])
+        ax[1,1].plot(power_allocated[:,1,i]/P_max, label='agent {}'.format(i), color=colors[i]) 
     ax[0,1].set_xlabel('iterations')
     ax[1,1].set_xlabel('iterations')
     # ax[1].legend()
@@ -29,8 +32,8 @@ def plot_testing(test_results, f_min, P_max, num_curves=15, num_agents=100, num_
 
     rates = np.stack(test_results['all_rates']).squeeze().reshape(num_iters, -1, num_agents)
     for i in range(num_curves):
-        ax[0,2].plot(rates[:,0,i], label='agent {}'.format(i))
-        ax[1,2].plot(rates[:,1,i], label='agent {}'.format(i))
+        ax[0,2].plot(rates[:,0,i], label='agent {}'.format(i), color=colors[i])
+        ax[1,2].plot(rates[:,1,i], label='agent {}'.format(i), color=colors[i])
     ax[0,2].plot(f_min*np.ones_like(rates[0,:,6]), ':k', linewidth=1, label=r'r_min')
     ax[1,2].plot(f_min*np.ones_like(rates[1,:,6]), ':k', linewidth=1, label=r'r_min')
     # ax[2].legend()
@@ -45,8 +48,8 @@ def plot_testing(test_results, f_min, P_max, num_curves=15, num_agents=100, num_
     fig, ax = plt.subplots(1, 2, figsize=(8, 3))
     rate_mean = np.stack(test_results['all_rates']).reshape(num_iters, -1, num_agents).sum(-1)
     for i in range(num_curves):
-        ax[0].plot(rate_mean[:,0], label='graph {}'.format(i))
-        ax[1].plot(rate_mean[:,1], label='graph {}'.format(i))
+        ax[0].plot(rate_mean[:,0], label='graph {}'.format(i), color=colors[i])
+        ax[1].plot(rate_mean[:,1], label='graph {}'.format(i), color=colors[i])
     ax[0].set_xlabel('iterations')
     ax[1].set_xlabel('iterations')
     # ax[0].legend()
@@ -102,7 +105,7 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
     for i in range(2):
         for j in range(2):
             ax[i,j].legend()
-
+    # fig.title('Optimal Power Allocated to Constrained and Unconstrained Agents')
     fig.tight_layout()
     fig.savefig(f'{pathname}constrained_agents_comparison.png')
 
@@ -127,7 +130,7 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
     ax[1,0].set_xlabel(r'$\mu_3$')
     ax[1,0].set_ylabel('unconstrained agents')
     ax[1,1].set_xlabel(r'$\mu_4$')
-    ax[0,0].set_title(r'Dual variables')    
+    ax[0,0].set_title(r'Dual variables/15')    
     for i in range(2):
         for j in range(2):
             ax[i,j].legend()      
@@ -137,7 +140,7 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
 
 
 
-def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, num_iters=800, unrolling_iters=6, pathname=None, all=True):
+def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, num_iters=800, unrolling_iters=6, pathname=None, all=True):
     assert pathname is not None, 'Please provide a pathname to save the figures'
 
     # Define consistent colors for modes
@@ -149,34 +152,48 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
         modes_list = ['SA']
 
     layer = -1
+    colors_idx = plt.cm.tab20(np.linspace(0, 1, num_curves))
     for mode in modes_list:
         for graph in range(3):
             fig, ax = plt.subplots(2, 3, figsize=(12, 6))
             multipliers = np.stack(all_epoch_results[mode, 'test_mu_over_time'])
             for i in range(num_curves):
-                ax[0,0].plot(multipliers[-1,0,:,i+graph*num_agents], label='agent {}'.format(i))
-                ax[1,0].plot(multipliers[-1,1,:,i+graph*num_agents], label='agent {}'.format(i))
+                ax[0,0].plot(multipliers[-1,0,:,i+graph*num_agents]/15, label='agent {}'.format(i), color=colors_idx[i])
+                ax[1,0].plot(multipliers[-1,1,:,i+graph*num_agents]/15, label='agent {}'.format(i), color=colors_idx[i])
             ax[0,0].set_xlabel('iterations')
             ax[1,0].set_xlabel('iterations')
             ax[0,0].set_title('Dual variables')
             ax[1,0].set_title('Dual variables')
-            
+            ax[0,0].grid(True, linestyle='--', alpha=0.7)
+            ax[1,0].grid(True, linestyle='--', alpha=0.7)
+
+            # power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])
+            # ax[0,1].hist(power_allocated[-1,0,layer,graph*num_agents:(1+graph)*num_agents]/P_max, 
+            #              bins=20, color=colors[mode], alpha=0.7)
+            # ax[1,1].hist(power_allocated[-1,1,layer,+graph*num_agents:(1+graph)*num_agents]/P_max, 
+            #              bins=20, color=colors[mode], alpha=0.7) 
+            # ax[0,1].set_xlabel('p')
+            # ax[1,1].set_xlabel('p')
+            # ax[0,1].set_title('Power allocated % P_max')
+            # ax[1,1].set_title('Power allocated % P_max')
             power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])
-            ax[0,1].hist(power_allocated[-1,0,layer,graph*num_agents:(1+graph)*num_agents]/P_max, 
-                         bins=20, color=colors[mode], alpha=0.7)
-            ax[1,1].hist(power_allocated[-1,1,layer,+graph*num_agents:(1+graph)*num_agents]/P_max, 
-                         bins=20, color=colors[mode], alpha=0.7) 
-            ax[0,1].set_xlabel('p')
-            ax[1,1].set_xlabel('p')
-            ax[0,1].set_title('Power allocated % P_max')
-            ax[1,1].set_title('Power allocated % P_max')
+            for i in range(num_curves):
+                ax[0,1].plot(power_allocated[-1,0,:,i]/P_max, label='agent {}'.format(i), color=colors_idx[i])
+                ax[1,1].plot(power_allocated[-1,1,:,i]/P_max, label='agent {}'.format(i), color=colors_idx[i]) 
+            ax[0,1].set_xlabel('iterations')
+            ax[1,1].set_xlabel('iterations')
+            # ax[1].legend()
+            ax[0,1].set_title('Power allocated')
+            ax[1,1].set_title('Power allocated')
+            ax[0,1].grid(True, linestyle='--', alpha=0.7)
+            ax[1,1].grid(True, linestyle='--', alpha=0.7)
 
             rates = np.stack(all_epoch_results[mode, 'all_rates'])
             iters = unrolling_iters if mode == 'unrolling' else num_iters
-            start = max(0, num_iters-1000)
+            start = 0 #max(0, num_iters-1000)
             for i in range(num_curves):
-                ax[0,2].plot(np.arange(start, iters), rates[-1,0,start:,i+graph*num_agents], label='agent {}'.format(i))
-                ax[1,2].plot(np.arange(start, iters), rates[-1,1,start:,i+graph*num_agents], label='agent {}'.format(i))
+                ax[0,2].plot(np.arange(start, iters), rates[-1,0,start:,i+graph*num_agents], label='agent {}'.format(i), color=colors_idx[i])
+                ax[1,2].plot(np.arange(start, iters), rates[-1,1,start:,i+graph*num_agents], label='agent {}'.format(i), color=colors_idx[i])
             ax[0,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,0,start:,6]), ':k', linewidth=1, label=r'r_min')
             ax[1,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,1,start:,6]), ':k', linewidth=1, label=r'r_min')
             # ax[0,2].set_xlim(start, iters-1)
@@ -185,6 +202,8 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
             ax[1,2].set_xlabel('rate')
             ax[0,2].set_title('Rates')
             ax[1,2].set_title('Rates')
+            ax[0,2].grid(True, linestyle='--', alpha=0.7)
+            ax[1,2].grid(True, linestyle='--', alpha=0.7)
             fig.tight_layout()
             fig.savefig(f'{pathname}SA_results_{mode}_{graph}.png')
 
@@ -203,7 +222,7 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
         fig.tight_layout()
         fig.savefig(f'{pathname}SA_mean_rates_{mode}.png')
 
-    fig, ax = plt.subplots(1, 2, figsize=(6, 3))
+    fig, ax = plt.subplots(1, 2, figsize=(12, 3))
     for i, mode in enumerate(modes_list):
         iters = num_iters if mode == 'SA' else unrolling_iters
         temp_rates = np.stack(all_epoch_results[mode, 'all_rates'])[:,:,0]
@@ -224,6 +243,59 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=15, num_agents=100, 
     fig.tight_layout()
     print(pathname)
     fig.savefig(f'{pathname}SA_L_over_time.png')
+
+
+    for mode in modes_list:
+        fig, ax = plt.subplots(1, 3, figsize=(12, 3))
+        # multipliers = np.stack(all_epoch_results[mode, 'test_mu_over_time'])
+        # for i in range(num_curves):
+        #     ax[0,0].plot(multipliers[-1,0,:,i+graph*num_agents]/15, label='agent {}'.format(i), color=colors_idx[i])
+        #     ax[1,0].plot(multipliers[-1,1,:,i+graph*num_agents]/15, label='agent {}'.format(i), color=colors_idx[i])
+        # ax[0,0].set_xlabel('iterations')
+        # ax[1,0].set_xlabel('iterations')
+        # ax[0,0].set_title('Dual variables')
+        # ax[1,0].set_title('Dual variables')
+        # ax[0,0].grid(True, linestyle='--', alpha=0.7)
+        # ax[1,0].grid(True, linestyle='--', alpha=0.7)
+
+        power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])
+        power_allocated = power_allocated.reshape(power_allocated.shape[0], power_allocated.shape[1], num_iters, -1, num_agents)
+        power_allocated = torch.tensor(power_allocated).squeeze(0).transpose(1,2).reshape(-1, num_iters, num_agents)
+        ax[0].plot(power_allocated.mean((0,-1))/P_max, label='Mean power')
+        ax[0].plot(power_allocated[:,:,:int(np.floor(num_agents/2))].mean((0,-1))/P_max, label='Mean constrained power')
+        ax[0].plot(power_allocated[:,:,int(np.floor(num_agents/2)):].mean((0,-1))/P_max, label='Mean unconstrained power') 
+        ax[0].set_xlabel('iterations')
+        ax[0].set_ylabel(r'$\mathbf{p}/\mathbf{p}_{max}$')
+        # ax[1].legend()
+        ax[0].legend()
+        ax[0].grid(True, linestyle='--', alpha=0.7)
+
+        rates = np.stack(all_epoch_results[mode, 'all_rates'])
+        rates = rates.reshape(rates.shape[0], rates.shape[1], num_iters, -1, num_agents)
+        rates = torch.tensor(rates).squeeze(0).transpose(1,2).reshape(-1, num_iters, num_agents)
+        iters = unrolling_iters if mode == 'unrolling' else num_iters
+        start = 0 #max(0, num_iters-1000)
+        ax[1].plot(np.arange(start, iters), rates.mean((0,-1)), label='Mean rate')
+        ax[1].plot(np.arange(start, iters), rates[:,:,:int(np.floor(num_agents/2))].mean((0,-1)), label='Mean constrained rate')
+        ax[1].plot(np.arange(start, iters), rates[:,:,int(np.floor(num_agents/2)):].mean((0,-1)), label='Mean unconstrained rate')
+
+        # ax[0,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,0,start:,6]), ':k', linewidth=1, label=r'r_min')
+        # ax[1,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,1,start:,6]), ':k', linewidth=1, label=r'r_min')
+        ax[1].set_xlabel('iterations')
+        ax[1].set_ylabel(r'$\mathbf{r}(\boldsymbol{\theta})$')
+        ax[1].grid(True, linestyle='--', alpha=0.7)
+        ax[1].legend()
+
+        violation = torch.minimum(torch.zeros_like(rates[:,:,:int(np.floor(num_agents/2))]), rates[:,:,:int(np.floor(num_agents/2))]-f_min).abs()
+        ax[2].plot(np.arange(start, iters), violation.mean((0,-1)), linewidth=1, label=r'violation')
+        ax[2].set_xlabel('iterations')
+        ax[2].set_ylabel('violation')
+        ax[2].grid(True, linestyle='--', alpha=0.7)
+
+    fig.tight_layout()
+    fig.savefig(f'{pathname}collective_results.png')
+
+    print('ok!')
 
 
 

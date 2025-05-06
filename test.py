@@ -73,7 +73,7 @@ def main(experiment_path, mu_uncons=0.0):
     # data_path = './data/m_100_R_2500_Pmax_0_60.json'
     data_path = './data/{}_{}_train_{}.json'.format(experiment_path.split('/')[-2][:30], max_D_TxRx, args.num_samples_train)
     data_list = torch.load(data_path, map_location='cpu')
-    loader = DataLoader(WirelessDataset(data_list['test']), batch_size=1, shuffle=False)
+    loader = DataLoader(WirelessDataset(data_list['test']), batch_size=32, shuffle=False)
     del data_list
 
     # load model from checkpoint
@@ -149,7 +149,7 @@ def main(experiment_path, mu_uncons=0.0):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DA Unrolling - Wireless Allocation Test')
-    parser.add_argument('--experiment_path', type=str, default='subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_1e-06/d52b0178')
+    parser.add_argument('--experiment_path', type=str, default='subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/842c4d5c')
     test_args = parser.parse_args()
 
     for mu_uncons in [0.0]:

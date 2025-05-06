@@ -159,7 +159,7 @@ class DualModel(nn.Module):
         super(DualModel, self).__init__()
         self.device = device
         self.eval_mode = eval_mode
-        self.num_features_list = [2] + [args.dual_hidden_size] * args.dual_num_sublayers
+        self.num_features_list = [3] + [args.dual_hidden_size] * args.dual_num_sublayers
         self.n = args.n
         self.P_max = args.P_max
         self.constrained_subnetwork = args.constrained_subnetwork
@@ -184,10 +184,11 @@ class DualModel(nn.Module):
 
 
     def forward(self, block_id, mu, p, edge_index_l, edge_weight_l, transmitters_index):
-        m = mu.view(-1, self.args.n).shape[0]
-        cons_lvl = torch.cat([self.args.r_min * torch.ones(m, int(np.floor(self.args.constrained_subnetwork*self.args.n))).to(self.device), 
-                                torch.zeros(m, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.n))).to(self.device)], dim=1).view(-1, 1)
-        x = torch.cat((p/self.P_max, mu/self.normalized_mu, cons_lvl), dim=1)
+        if not hasattr(self, 'cons_lvl'):
+            m = mu.view(-1, self.n).shape[0]
+            self.cons_lvl = torch.cat([self.r_min * torch.ones(m, int(np.floor(self.constrained_subnetwork*self.n))).to(self.device), 
+                                        torch.zeros(m, int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)], dim=1).view(-1, 1)
+        x = torch.cat((p/self.P_max, mu/self.normalized_mu, self.cons_lvl), dim=1)
         mu = self.blocks[block_id](x, edge_index_l, edge_weight_l, transmitters_index, activation=None)
         if self.constrained_subnetwork < 1:
             mu = mu.view(-1, self.n)
@@ -214,7 +215,7 @@ class DualModel(nn.Module):
                 target = target.view(num_graphs, self.n)
                 L = ((mu[:, :int(np.floor(self.constrained_subnetwork*self.n))] - target[:, :int(np.floor(self.constrained_subnetwork*self.n))]) ** 2).mean(1)
             else:
-                L = -1 * lagrangian_fn(rates, mu, r_min, p=p, metric=metric, constrained_subnetwork=self.constrained_subnetwork)
+                L = -1 * lagrangian_fn(rates, mu, self.cons_lvl, p=p, metric=metric, constrained_subnetwork=self.constrained_subnetwork)
                 
             # resilience loss
             if self.resilient_weight_deacay > 0:

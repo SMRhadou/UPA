@@ -42,27 +42,27 @@ def make_parser():
     parser.add_argument('--density_mode', type=str, default='var_density', choices=['var_density', 'fixed_density'], help='Density mode')
     parser.add_argument('--BW', type=float, default=20e6, help='Bandwidth (Hz)')
     parser.add_argument('--P_maxdBm', type=float, default=0, help='Maximum transmit power (dBm)')
-    parser.add_argument('--r_min', type=float, default=2.0, help='Minimum-rate constraint')
+    parser.add_argument('--r_min', type=float, default=1.5, help='Minimum-rate constraint')
     parser.add_argument('--ss_param', type=float, default=1.0, help='Spread Spectrum parameter')
     parser.add_argument('--T_0', type=int, default=1, help='Size of the iteration window for averaging recent rates for dual variable updates')
     parser.add_argument('--metric', type=str, default='rates', choices=['rates', 'power'], help='Metric for rate calculation')
 
     # training parameters
-    parser.add_argument('--training_modes', type=list, default=['primal'], help='Training modes for the model')
+    parser.add_argument('--training_modes', type=list, default=['dual'], help='Training modes for the model')
     parser.add_argument('--supervised', action='store_true', default=False, help='Supervised training')
     parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
     parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch size/No. of graphs in a batch')
-    parser.add_argument('--num_samplers', type=int, default=128, help='Number of samplers for the data loader')
+    parser.add_argument('--batch_size', type=int, default=128, help='Batch size/No. of graphs in a batch')
+    parser.add_argument('--num_samplers', type=int, default=1, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=5000, help='Number of training epochs')
     parser.add_argument('--num_epochs_dual', type=int, default=10000, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=200, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=1, help='Number of training cycles')
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_primal_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers in trainnig primal model')
-    parser.add_argument('--lr_dual_main', type=float, default=1e-4, help='Learning rate for dual networks')
+    parser.add_argument('--lr_dual_main', type=float, default=1e-7, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
-    parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
+    parser.add_argument('--dual_resilient_decay', type=float, default=100.0, help='Resilient dual variables')
     parser.add_argument('--lr_DA_dual', type=float, default=0.1, help='Learning rate for dual variables in the DA algorithm')
     parser.add_argument('--training_resilient_decay', type=float, default=0.0, help='Learning rate for resilient dual variables')
     parser.add_argument('--thresh_resilient', type=float, default=2.5, help='Threshold for resilient dual variables')
@@ -90,7 +90,7 @@ def make_parser():
     parser.add_argument('--mu_max', type=int, default=5.0, help='maximum value of the dual variables in the training set of the primal model')
     parser.add_argument('--mu_distribution', type=str, default='uniform', choices=['uniform', 'exponential'], help='Distribution of the dual variables')
     # dual variable values for unrolling
-    parser.add_argument('--mu_init', type=float, default=10.0, help='initial value of the dual variables in the training set')
+    parser.add_argument('--mu_init', type=float, default=0.0, help='initial value of the dual variables in the training set')
     parser.add_argument('--mu_uncons', type=float, default=0.0, help='value of lambda bar of the unconstrained users')
 
     parser.add_argument('--zero_probability', type=float, default=0.2, help='Probability of zeroing out the dual variables')
@@ -143,7 +143,8 @@ def main(args):
 
     if args.training_modes[0] == 'dual':
         if args.unrolled_primal:
-            experiment_path = './results/subnetwork_m_100_R_5000_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_60.0_rMin_1.5_lr_0.0001/7c3a5193' 
+            # experiment_path = './results/subnetwork_m_100_R_5000_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_60.0_rMin_1.5_lr_0.0001/7c3a5193' 
+            experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/842c4d5c'
         else:
             if args. normalize_mu:
                 experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/bb3c2c94' #7fe6ab7b
