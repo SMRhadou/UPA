@@ -53,8 +53,8 @@ def main(experiment_path, mu_uncons=0.0):
     args.dual_resilient_decay = 100.0       #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     args.use_wandb = False
     args.adjust_constraints = False
-    args.mu_uncons = mu_uncons
-    # args.mu_init = 0
+    # args.mu_uncons = mu_uncons
+    args.mu_init = 10
  
     # args.unrolled_primal = False
     # args.normalize_mu = False
@@ -82,7 +82,7 @@ def main(experiment_path, mu_uncons=0.0):
     dual_model = DualModel(args, device)
     if args.training_modes[0] == 'dual':
         if args.unrolled_primal:
-            primal_experiment_path = './results/subnetwork_m_100_R_5000_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_60.0_rMin_1.5_lr_0.0001/7c3a5193' 
+            primal_experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/842c4d5c' 
         else:
             if args.normalize_mu:
                 primal_experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/bb3c2c94' #7fe6ab7b
@@ -149,7 +149,8 @@ def main(experiment_path, mu_uncons=0.0):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DA Unrolling - Wireless Allocation Test')
-    parser.add_argument('--experiment_path', type=str, default='subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/842c4d5c')
+    parser.add_argument('--experiment_path', type=str, default='subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_100.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/24dc8c93')
+    # primal: subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/842c4d5c
     test_args = parser.parse_args()
 
     for mu_uncons in [0.0]:

@@ -8,10 +8,9 @@ from collections import defaultdict
 
 
 class Trainer():
-    def __init__(self, primal_model, dual_model, loader=None, optimizers=None, device=None, args=None, **kwargs):
+    def __init__(self, primal_model, dual_model, optimizers=None, device=None, args=None, **kwargs):
         self.primal_model = primal_model
         self.dual_model = dual_model
-        self.loader = loader
         self.primal_optimizer = optimizers['primal'] if optimizers is not None else None
         self.dual_optimizer = optimizers['dual'] if optimizers is not None else None
         self.device = device
@@ -61,12 +60,17 @@ class Trainer():
         return mu.view(-1, 1)
 
 
-    def unroll_DA(self, data):
-        data = data.to(self.device)
-        edge_index_l, edge_weight_l, a_l, transmitters_index, num_graphs = \
-            data.edge_index_l, data.edge_weight_l, data.weighted_adjacency_l, \
-            data.transmitters_index, data.num_graphs
-        
+    def unroll_DA(self, data=None, edge_index_l=None, edge_weight_l=None, a_l=None, transmitters_index=None, num_graphs=None):
+        if data is not None:
+            data = data.to(self.device)
+            edge_index_l, edge_weight_l, a_l, transmitters_index, num_graphs = \
+                data.edge_index_l, data.edge_weight_l, data.weighted_adjacency_l, \
+                data.transmitters_index, data.num_graphs
+        if hasattr(self.primal_model, 'cons_lvl'):
+            delattr(self.primal_model, 'cons_lvl')
+        if hasattr(self.dual_model, 'cons_lvl'):
+            delattr(self.dual_model, 'cons_lvl')
+
         mu = torch.cat((self.args.mu_init * torch.rand(num_graphs, int(np.floor(self.args.constrained_subnetwork*self.args.m))).to(self.device), 
                         self.mu_uncons * torch.ones(num_graphs, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
         mu = mu.view(num_graphs * self.args.n, 1)
@@ -94,28 +98,27 @@ class Trainer():
         outputs_list.append((mu, p, rates, L/self.args.n))
 
         if self.args.use_wandb:
-            wandb.log({'dual lagrangian loss': L.item()/self.args.n})
-            wandb.log({'max_lambda': torch.max(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ].cpu()).item()})
-            wandb.log({'70th_percentile_lambda': torch.quantile(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ], 0.7).item()})
-            wandb.log({'30th_percentile_lambda': torch.quantile(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ], 0.3).item()})
-            wandb.log({'mean rate': torch.mean(rates.view(num_graphs, self.args.n).mean(1).detach().cpu()).item()})
-            wandb.log({'min rate': torch.min(rates.detach().cpu()).item()})
-            wandb.log({'mean constrained rate': torch.mean(rates.view(num_graphs, self.args.n)[:, :int(np.floor(self.args.constrained_subnetwork*self.args.n))].mean(1).detach().cpu()).item()})
-            wandb.log({'mean unconstrained rate': torch.mean(rates.view(num_graphs, self.args.n)[:, int(np.floor(self.args.constrained_subnetwork*self.args.n)):].mean(1).detach().cpu()).item()})
-            wandb.log({'30th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.3).item()})
-            wandb.log({'70th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.7).item()})
-            wandb.log({'max rate': torch.max(rates.detach().cpu()).item()})
-            wandb.log({'min P': torch.min(p.detach().cpu()).item()})
-            wandb.log({'30th_percentile_P': torch.quantile(p.detach().cpu(), 0.3).item()})
-            wandb.log({'70th_percentile_P': torch.quantile(p.detach().cpu(), 0.7).item()})
-            wandb.log({'max P': torch.max(p.detach().cpu()).item()})
+            wandb.log({'dual/dual lagrangian loss': L.item()/self.args.n})
+            wandb.log({'dual/max_lambda': torch.max(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ].cpu()).item()})
+            wandb.log({'dual/70th_percentile_lambda': torch.quantile(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ], 0.7).item()})
+            wandb.log({'dual/30th_percentile_lambda': torch.quantile(mu.detach().view(-1, self.args.n)[:,:int(np.floor(self.args.constrained_subnetwork*self.args.n)) ], 0.3).item()})
+            wandb.log({'dual/mean rate': torch.mean(rates.view(num_graphs, self.args.n).mean(1).detach().cpu()).item()})
+            wandb.log({'dual/min rate': torch.min(rates.detach().cpu()).item()})
+            wandb.log({'dual/mean constrained rate': torch.mean(rates.view(num_graphs, self.args.n)[:, :int(np.floor(self.args.constrained_subnetwork*self.args.n))].mean(1).detach().cpu()).item()})
+            wandb.log({'dual/mean unconstrained rate': torch.mean(rates.view(num_graphs, self.args.n)[:, int(np.floor(self.args.constrained_subnetwork*self.args.n)):].mean(1).detach().cpu()).item()})
+            wandb.log({'dual/30th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.3).item()})
+            wandb.log({'dual/70th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.7).item()})
+            wandb.log({'dual/max rate': torch.max(rates.detach().cpu()).item()})
+            wandb.log({'dual/min P': torch.min(p.detach().cpu()).item()})
+            wandb.log({'dual/30th_percentile_P': torch.quantile(p.detach().cpu(), 0.3).item()})
+            wandb.log({'dual/70th_percentile_P': torch.quantile(p.detach().cpu(), 0.7).item()})
+            wandb.log({'dual/max P': torch.max(p.detach().cpu()).item()})
 
         return outputs_list
 
 
 
-    def train(self, epoch, training_multipliers, mode='primal'):
-        assert self.loader is not None, 'Data loader is not defined'
+    def train(self, epoch, loader, training_multipliers, mode='primal'):
         assert self.primal_optimizer is not None, 'Primal optimizer is not defined'
         assert self.dual_optimizer is not None, 'Dual optimizer is not defined'
         assert self.primal_model is not None, 'Primal model is not defined'
@@ -123,11 +126,10 @@ class Trainer():
         assert self.device is not None, 'Device is not defined'
         assert self.args is not None, 'Args are not defined'
 
-        num_samplers = self.args.num_samplers if hasattr(self.args, 'num_samplers') else 1
+        num_samplers = self.args.num_samplers if mode=='primal' else 1
         # initialize the training multipliers
         
-
-        for data, batch_idx in self.loader:
+        for data, batch_idx in loader:
             self.primal_model.zero_grad()
             data = data.to(self.device)
             y, edge_index_l, edge_weight_l, _, \
@@ -157,19 +159,35 @@ class Trainer():
                 self.primal_model.train()
                 self.dual_model.eval()
                 
-                # mu = self.multiplier_sampler(num_graphs*num_samplers*self.args.n, self.args.mu_max, self.args.zero_probability, 
-                #                              dist=self.args.mu_distribution, all_zeros=self.args.all_zeros).to(self.device)
+                # Sample the multipliers
                 if hasattr(self.primal_model, 'cons_lvl'):
                     delattr(self.primal_model, 'cons_lvl')
-                mu_over_time, _, _, _, _ = self.dual_model.DA(self.primal_model, data, 0.1, 100, 
-                                                                self.args.n, self.args.r_min, self.noise_var, self.args.num_iters, self.args.ss_param, 
-                                                                self.args.mu_init, self.mu_uncons, self.device, False, True)
-                delattr(self.primal_model, 'cons_lvl')
-                mu_over_time = torch.stack(mu_over_time).reshape(self.args.num_iters, -1, self.args.n)[:,-1]
-                # Choose 32 random rows from mu_over_time
-                selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers]
-                mu = mu_over_time[selected_indices].view(-1,1).to(self.device)
+                if self.args.lambda_sampler == 'DA':
+                    mu_over_time, _, _, _, _ = self.dual_model.DA(self.primal_model, data, 0.1, 100, 
+                                                                    self.args.n, self.args.r_min, self.noise_var, self.args.num_iters, self.args.ss_param, 
+                                                                    self.args.mu_init, self.mu_uncons, self.device, False, True)
+                    mu_over_time = torch.stack(mu_over_time).reshape(self.args.num_iters, -1, self.args.n)[:,-1]
+                    # Choose 32 random rows from mu_over_time
+                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers]
+                    mu = mu_over_time[selected_indices].view(-1,1).to(self.device)
 
+                elif self.args.lambda_sampler == 'random':
+                    mu = self.multiplier_sampler(num_graphs*num_samplers*self.args.n, self.args.mu_max, self.args.zero_probability, 
+                             dist=self.args.mu_distribution, all_zeros=self.args.all_zeros).to(self.device)
+
+                elif self.args.lambda_sampler == 'dual_network':
+                    # assert len(self.args.training_modes) == 2
+                    outputs_list = self.unroll_DA(edge_index_l=edge_index_l, edge_weight_l=edge_weight_l, a_l=a_l, transmitters_index=transmitters_index, num_graphs=num_graphs*num_samplers)
+                    mu_over_time = torch.cat([outputs_list[i][0].view(num_graphs*num_samplers, self.args.n).detach()
+                                    for i in range(len(outputs_list))], dim=0)
+                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers]
+                    mu = mu_over_time[selected_indices].view(-1,1).to(self.device)
+                    del outputs_list
+
+                if hasattr(self.primal_model, 'cons_lvl'):
+                    delattr(self.primal_model, 'cons_lvl')
+                
+                # Forward pass and Losses
                 p = self.primal_model(mu.detach(), edge_index_l, edge_weight_l, transmitters_index)    # MU is normalized to [0, 1]
                 gamma = torch.ones(num_samplers*num_graphs * self.args.n, 1).to(self.device) 
                 # if p is not a list
@@ -201,28 +219,29 @@ class Trainer():
 
                 if isinstance(p, list):
                     for i in range(len(rates)):
-                        wandb.log({'mean rate at primal layer {}'.format(i): torch.mean(rates[i].view(num_graphs*num_samplers, self.args.n).mean(1).detach().cpu()).item()})
+                        wandb.log({'primal/mean rate at primal layer {}'.format(i): torch.mean(rates[i].view(num_graphs*num_samplers, self.args.n).mean(1).detach().cpu()).item()})
                         if self.args.constrained_subnetwork < 1:
-                            wandb.log({'mean constrained rate at primal layer {}'.format(i): torch.mean(rates[i].view(num_graphs*num_samplers, self.args.n)[:, :int(np.floor(self.args.constrained_subnetwork*self.args.n))].mean(1).detach().cpu()).item()})
-                            wandb.log({'mean unconstrained rate at primal layer {}'.format(i): torch.mean(rates[i].view(num_graphs*num_samplers, self.args.n)[:, int(np.floor(self.args.constrained_subnetwork*self.args.n)):].mean(1).detach().cpu()).item()})
+                            wandb.log({'primal/mean constrained rate at primal layer {}'.format(i): torch.mean(rates[i].view(num_graphs*num_samplers, self.args.n)[:, :int(np.floor(self.args.constrained_subnetwork*self.args.n))].mean(1).detach().cpu()).item()})
+                            wandb.log({'primal/mean unconstrained rate at primal layer {}'.format(i): torch.mean(rates[i].view(num_graphs*num_samplers, self.args.n)[:, int(np.floor(self.args.constrained_subnetwork*self.args.n)):].mean(1).detach().cpu()).item()})
                     rates, p = rates[-1], p[-1]
 
                 if self.args.use_wandb:
-                    wandb.log({'primal training loss': loss.item()})
-                    wandb.log({'mean rate': torch.mean(rates.view(num_graphs*num_samplers, self.args.n).mean(1).detach().cpu()).item()})
-                    wandb.log({'min rate': torch.min(rates.detach().cpu()).item()})
-                    wandb.log({'mean constrained rate': torch.mean(rates.view(num_graphs*num_samplers, self.args.n)[:, :int(np.floor(self.args.constrained_subnetwork*self.args.n))].mean(1).detach().cpu()).item()})
-                    wandb.log({'mean unconstrained rate': torch.mean(rates.view(num_graphs*num_samplers, self.args.n)[:, int(np.floor(self.args.constrained_subnetwork*self.args.n)):].mean(1).detach().cpu()).item()})
-                    wandb.log({'30th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.3).item()})
-                    wandb.log({'70th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.7).item()})
-                    wandb.log({'max rate': torch.max(rates.detach().cpu()).item()})
-                    wandb.log({'min P': torch.min(p.detach().cpu()).item()})
-                    wandb.log({'30th_percentile_P': torch.quantile(p.detach().cpu(), 0.3).item()})
-                    wandb.log({'70th_percentile_P': torch.quantile(p.detach().cpu(), 0.7).item()})
-                    wandb.log({'max P': torch.max(p.detach().cpu()).item()})
+                    wandb.log({'primal/primal training loss': loss.item()})
+                    wandb.log({'primal/mean rate': torch.mean(rates.view(num_graphs*num_samplers, self.args.n).mean(1).detach().cpu()).item()})
+                    wandb.log({'primal/min rate': torch.min(rates.detach().cpu()).item()})
+                    wandb.log({'primal/mean constrained rate': torch.mean(rates.view(num_graphs*num_samplers, self.args.n)[:, :int(np.floor(self.args.constrained_subnetwork*self.args.n))].mean(1).detach().cpu()).item()})
+                    wandb.log({'primal/mean unconstrained rate': torch.mean(rates.view(num_graphs*num_samplers, self.args.n)[:, int(np.floor(self.args.constrained_subnetwork*self.args.n)):].mean(1).detach().cpu()).item()})
+                    wandb.log({'primal/30th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.3).item()})
+                    wandb.log({'primal/70th_percentile_rate': torch.quantile(rates.detach().cpu(), 0.7).item()})
+                    wandb.log({'primal/max rate': torch.max(rates.detach().cpu()).item()})
+                    wandb.log({'primal/min P': torch.min(p.detach().cpu()).item()})
+                    wandb.log({'primal/30th_percentile_P': torch.quantile(p.detach().cpu(), 0.3).item()})
+                    wandb.log({'primal/70th_percentile_P': torch.quantile(p.detach().cpu(), 0.7).item()})
+                    wandb.log({'primal/max P': torch.max(p.detach().cpu()).item()})
                     if self.primal_model.unrolled:
-                        wandb.log({'primal constraint loss': torch.mean(constraints_loss.detach().cpu()).item()})
-
+                        wandb.log({'primal/primal constraint loss': torch.mean(constraints_loss.detach().cpu()).item()})
+                
+                del mu
 
             else:
                 self.dual_model.train()
@@ -232,7 +251,7 @@ class Trainer():
                     self.multipliers_table = []
                 
                 # Forward pass
-                outputs_list = self.unroll_DA(data)
+                outputs_list = self.unroll_DA(edge_index_l=edge_index_l, edge_weight_l=edge_weight_l, a_l=a_l, transmitters_index=transmitters_index, num_graphs=num_graphs)
                 self.multipliers_table.append(torch.from_numpy(np.stack([
                                         outputs_list[i][0].view(num_graphs,self.args.n).detach().cpu().numpy() for i in range(len(outputs_list))
                                         ])).view(-1, self.args.n))
@@ -261,9 +280,12 @@ class Trainer():
                 self.dual_trained = True
 
                 if self.args.use_wandb:
-                    wandb.log({'dual training loss': L.item()})
-                    wandb.log({'constraint loss': torch.mean(constraints_loss.detach().cpu()).item()})
+                    wandb.log({'dual/dual training loss': L.item()})
+                    wandb.log({'dual/constraint loss': torch.mean(constraints_loss.detach().cpu()).item()})
                     
+            # clear the cuda memory from data
+            del data, edge_index_l, edge_weight_l, a_l, transmitters_index
+            torch.cuda.empty_cache()
         
         return np.stack(loss_list).mean(), training_multipliers if multiplier_update else None
 
@@ -273,6 +295,7 @@ class Trainer():
         fix_mu_uncons = kwargs.get('fix_mu_uncons', True)
 
         test_results = defaultdict(list)
+
         for data, _ in loader:
             # DA
             mu_over_time, L_over_time, all_Ps, all_rates, violation_dict = \
@@ -309,6 +332,8 @@ class Trainer():
         unrolling_results = defaultdict(list)
         randPolicy_results = defaultdict(list)
         full_power_results = defaultdict(list)
+        if hasattr(self.primal_model, 'cons_lvl'):
+            delattr(self.primal_model, 'cons_lvl')
         for data, _ in loader:
             # DA
             mu_over_time, L_over_time, all_Ps, all_rates, violation_dict = \
@@ -342,7 +367,7 @@ class Trainer():
                 self.primal_model.eval()
                 self.dual_model.eval()
                 
-                outputs_list = self.unroll_DA(data)
+                outputs_list = self.unroll_DA(data=data)
                 _, _, rates, _ = outputs_list[-1]
                 # rates = rates.squeeze(-1)
                 for i in range(len(outputs_list)):

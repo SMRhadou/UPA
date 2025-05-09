@@ -71,7 +71,7 @@ def plot_testing(test_results, f_min, P_max, num_curves=15, num_agents=100, num_
 
 
 def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=None):
-    modes_list = ['SA']#, 'unrolling']
+    modes_list = ['SA', 'unrolling']
     fig, ax = plt.subplots(2, 2, figsize=(8, 4))
 
     colors = {'SA': 'darkorange', 'unrolling': 'green'}
@@ -147,7 +147,7 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
     colors = {'SA': 'darkorange', 'unrolling': 'green', 'random': 'lightblue', 'full_power': 'lightgray'}
     
     if all:
-        modes_list = ['SA']#, 'unrolling']
+        modes_list = ['SA', 'unrolling']
     else:
         modes_list = ['SA']
 
@@ -257,10 +257,10 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
         # ax[1,0].set_title('Dual variables')
         # ax[0,0].grid(True, linestyle='--', alpha=0.7)
         # ax[1,0].grid(True, linestyle='--', alpha=0.7)
-
+        iters = num_iters if mode == 'SA' else unrolling_iters
         power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])
-        power_allocated = power_allocated.reshape(power_allocated.shape[0], power_allocated.shape[1], num_iters, -1, num_agents)
-        power_allocated = torch.tensor(power_allocated).squeeze(0).transpose(1,2).reshape(-1, num_iters, num_agents)
+        power_allocated = power_allocated.reshape(power_allocated.shape[0], power_allocated.shape[1], iters, -1, num_agents)
+        power_allocated = torch.tensor(power_allocated).squeeze(0).transpose(1,2).reshape(-1, iters, num_agents)
         ax[0].plot(power_allocated.mean((0,-1))/P_max, label='Mean power')
         ax[0].plot(power_allocated[:,:,:int(np.floor(num_agents/2))].mean((0,-1))/P_max, label='Mean constrained power')
         ax[0].plot(power_allocated[:,:,int(np.floor(num_agents/2)):].mean((0,-1))/P_max, label='Mean unconstrained power') 
@@ -271,9 +271,9 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
         ax[0].grid(True, linestyle='--', alpha=0.7)
 
         rates = np.stack(all_epoch_results[mode, 'all_rates'])
-        rates = rates.reshape(rates.shape[0], rates.shape[1], num_iters, -1, num_agents)
-        rates = torch.tensor(rates).squeeze(0).transpose(1,2).reshape(-1, num_iters, num_agents)
-        iters = unrolling_iters if mode == 'unrolling' else num_iters
+        rates = rates.reshape(rates.shape[0], rates.shape[1], iters, -1, num_agents)
+        rates = torch.tensor(rates).squeeze(0).transpose(1,2).reshape(-1, iters, num_agents)
+        iters = unrolling_iters if mode == 'unrolling' else iters
         start = 0 #max(0, num_iters-1000)
         ax[1].plot(np.arange(start, iters), rates.mean((0,-1)), label='Mean rate')
         ax[1].plot(np.arange(start, iters), rates[:,:,:int(np.floor(num_agents/2))].mean((0,-1)), label='Mean constrained rate')
@@ -293,7 +293,7 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
         ax[2].grid(True, linestyle='--', alpha=0.7)
 
     fig.tight_layout()
-    fig.savefig(f'{pathname}collective_results.png')
+    fig.savefig(f'{pathname}collective_results_{mode}.png')
 
     print('ok!')
 
@@ -333,7 +333,7 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     # Prepare data for all modes
     all_metric_values = []
     # Switched the order of 'random' and 'full_power'
-    mode_labels = ['SA']#, 'unrolling', 'full_power', 'random']
+    mode_labels = ['SA', 'unrolling', 'full_power', 'random']
     
     # Define consistent colors for modes
     colors = {'SA': 'darkorange', 'unrolling': 'green', 'random': 'lightblue', 'full_power': 'lightgray'}

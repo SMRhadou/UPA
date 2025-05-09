@@ -242,6 +242,8 @@ class DualModel(nn.Module):
     def DA(self, primal_model, data, lr_dual, resilient_weight_decay, n, r_min, noise_var, num_iters, ss_param, 
            mu_init, mu_uncons, device, adjust_constraints=True, fix_mu_uncons=True):
         primal_model.eval()
+        if hasattr(primal_model, 'cons_lvl'):
+            delattr(primal_model, 'cons_lvl')
 
         data = data.to(self.device)
         edge_index_l, edge_weight_l, a_l, transmitters_index, num_graphs = \
