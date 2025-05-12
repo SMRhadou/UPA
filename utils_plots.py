@@ -72,6 +72,12 @@ def plot_testing(test_results, f_min, P_max, num_curves=15, num_agents=100, num_
 
 def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=None):
     modes_list = ['SA', 'unrolling']
+    plot_labels = {
+        'SA': 'Dual dynamics',
+        'unrolling': 'Primal-dual Unrolling',
+        'full_power': 'Full Power',
+        'random': 'Random'
+    }
     fig, ax = plt.subplots(2, 2, figsize=(8, 4))
 
     colors = {'SA': 'darkorange', 'unrolling': 'green'}
@@ -83,13 +89,13 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
         
         # Create histograms with transparent colors
         ax[0,0].hist((power_allocated[:,:constrained_agents]/P_max).reshape(-1,1), bins=20, 
-                     alpha=alpha, color=colors[mode], label=mode)
+                     alpha=alpha, color=colors[mode], label=plot_labels[mode])
         ax[0,1].hist(rates[:,:constrained_agents].reshape(-1,1), bins=20, 
-                     alpha=alpha, color=colors[mode], label=mode)
+                     alpha=alpha, color=colors[mode], label=plot_labels[mode])
         ax[1,0].hist((power_allocated[:,constrained_agents:]/P_max).reshape(-1,1), bins=20, 
-                     alpha=alpha, color=colors[mode], label=mode)
+                     alpha=alpha, color=colors[mode], label=plot_labels[mode])
         ax[1,1].hist(rates[:,constrained_agents:].reshape(-1,1), bins=20, 
-                     alpha=alpha, color=colors[mode], label=mode)
+                     alpha=alpha, color=colors[mode], label=plot_labels[mode])
     
     # Add labels and titles
     ax[0,0].set_xlabel(r'p/p_{max}')
@@ -116,7 +122,7 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
         multipliers = multipliers.reshape(multipliers.shape[0], -1, n)[:,:,:50]
 
         ax[0,0].hist(multipliers.reshape(-1), bins=20, 
-                alpha=alpha, color=colors[mode], label=mode)
+                alpha=alpha, color=colors[mode], label=plot_labels[mode])
         # ax[0,1].hist(multipliers[1,:].reshape(-1), bins=20, 
         #         alpha=alpha, color=colors[mode], label=mode)
         # ax[1,0].hist(multipliers[2,:].reshape(-1), bins=20, 
@@ -130,7 +136,7 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
     ax[1,0].set_xlabel(r'$\mu_3$')
     ax[1,0].set_ylabel('unconstrained agents')
     ax[1,1].set_xlabel(r'$\mu_4$')
-    ax[0,0].set_title(r'Dual variables/15')    
+    ax[0,0].set_title(r'Dual variables')    
     for i in range(2):
         for j in range(2):
             ax[i,j].legend()      
@@ -244,6 +250,17 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
     print(pathname)
     fig.savefig(f'{pathname}SA_L_over_time.png')
 
+    
+    dual_fn = np.stack(all_epoch_results['unrolling', 'dual_fn'])
+    # one plot
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.plot(dual_fn.squeeze(0).mean(axis=0))
+    ax.set_xlabel('iterations')
+    ax.set_ylabel('Dual function')
+    fig.tight_layout()
+    print(pathname)
+    fig.savefig(f'{pathname}dual_fn.png')
+
 
     for mode in modes_list:
         fig, ax = plt.subplots(1, 3, figsize=(12, 3))
@@ -292,8 +309,8 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
         ax[2].set_ylabel('violation')
         ax[2].grid(True, linestyle='--', alpha=0.7)
 
-    fig.tight_layout()
-    fig.savefig(f'{pathname}collective_results_{mode}.png')
+        fig.tight_layout()
+        fig.savefig(f'{pathname}collective_results_{mode}.png')
 
     print('ok!')
 
@@ -334,6 +351,12 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     all_metric_values = []
     # Switched the order of 'random' and 'full_power'
     mode_labels = ['SA', 'unrolling', 'full_power', 'random']
+    plot_labels = {
+        'SA': 'Dual dynamics',
+        'unrolling': 'Primal-dual Unrolling',
+        'full_power': 'Full Power',
+        'random': 'Random'
+    }
     
     # Define consistent colors for modes
     colors = {'SA': 'darkorange', 'unrolling': 'green', 'random': 'lightblue', 'full_power': 'lightgray'}
@@ -363,7 +386,7 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
     for i, (values, mode) in enumerate(zip(all_metric_values, mode_labels)):
         pos = [r1, r2, r3, r4][i]
         # Apply transparency (alpha) for 'random' and 'full_power'
-        bar = ax.bar(pos, values, width=bar_width, color=colors[mode], alpha=alphas[mode], label=mode)
+        bar = ax.bar(pos, values, width=bar_width, color=colors[mode], alpha=alphas[mode], label=plot_labels[mode])
         bars.append(bar)
     
     # Add value labels on top of each bar

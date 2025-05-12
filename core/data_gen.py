@@ -8,12 +8,12 @@ from scipy import sparse
 from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import GDC
 
-from core.channel import create_channel_matrix_over_time
+from core.channel import create_channel_matrix_over_time, create_grid_channel_matrix
 from utils import Data_modTxIndex, WirelessDataset, convert_channels, calc_rates, ITLinQ
 
 warmup_steps = 0 # number of steps to stabilize the user rates
 
-def create_data(m, n, T_eff, R, path, num_samples, P_max, noise_var):
+def create_data(m, n, T_eff, R, path, num_samples, P_max, noise_var, graph_type='CR'):
     
     T = T_eff + warmup_steps
     
@@ -29,7 +29,7 @@ def create_data(m, n, T_eff, R, path, num_samples, P_max, noise_var):
         associations = dict()
         for phase in num_samples:
             for _ in tqdm(range(num_samples[phase])):
-                h, h_l = create_channel_matrix_over_time(m, n, T, R)
+                h, h_l = create_channel_matrix_over_time(m, n, T, R, graph_type)
                 H[phase].append(h)
                 H_l[phase].append(h_l)
             H[phase] = np.stack(H[phase])
@@ -65,7 +65,7 @@ def create_data(m, n, T_eff, R, path, num_samples, P_max, noise_var):
                 edge_index_l, edge_weight_l = from_scipy_sparse_matrix(sparse.csr_matrix(normalized_log_channel_matrix))
 
                 edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
-                                                                    num_nodes=n, method="threshold", eps=1e-4)
+                                                                    num_nodes=n, method="threshold", eps=2e-2)
                 
 
                 data = Data_modTxIndex( y=y,

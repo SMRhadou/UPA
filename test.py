@@ -28,7 +28,7 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
-def main(experiment_path, mu_uncons=0.0):
+def main(experiment_path, mu_uncons=0.0, best = True):
     # experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_10.0_depth_3_MUmax_10.0_rMin_1.5_lr_0.0001/'.format(R)
     # experiment_path += 'f9466ebe' if R == 2500 else 'c8e72391' # 1000 or 2000
     # # c820fc50 (2), 7841d161 (3)
@@ -49,8 +49,8 @@ def main(experiment_path, mu_uncons=0.0):
         args = json.load(f)
     args = SimpleNamespace(**args)
     fix_mu_uncons = True
-    args.lr_DA_dual = 0.1                   #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    args.dual_resilient_decay = 100.0       #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    args.lr_DA_dual = 0.05                   #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    args.dual_resilient_decay = 0.0       #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     args.use_wandb = False
     args.adjust_constraints = False
     # args.mu_uncons = mu_uncons
@@ -71,7 +71,8 @@ def main(experiment_path, mu_uncons=0.0):
 
     # load data
     # data_path = './data/m_100_R_2500_Pmax_0_60.json'
-    data_path = './data/{}_{}_train_{}.json'.format(experiment_path.split('/')[-2][:30], max_D_TxRx, args.num_samples_train)
+    data_path = './data/{}_{}_{}_train_{}.json'.format(experiment_path.split('/')[-2][:30], args.graph_type, max_D_TxRx, args.num_samples_train)
+    print(data_path)
     data_list = torch.load(data_path, map_location='cpu')
     loader = DataLoader(WirelessDataset(data_list['test']), batch_size=32, shuffle=False)
     del data_list
@@ -95,17 +96,30 @@ def main(experiment_path, mu_uncons=0.0):
         checkpoint = torch.load('{}/best_dual_model.pt'.format(experiment_path), map_location='cpu')
         dual_model.load_state_dict(checkpoint['model_state_dict'])
         dual_trained = True
-    else:
+    elif len(args.training_modes) == 1:
         checkpoint = torch.load('{}/best_primal_model.pt'.format(experiment_path), map_location='cpu')
         primal_model.load_state_dict(checkpoint['model_state_dict'])
         dual_trained = False
-   
+    else:
+        if best:
+            checkpoint = torch.load('{}/best_primal_model.pt'.format(experiment_path), map_location='cpu')
+        else:
+            checkpoint = torch.load('{}/primal_model.pt'.format(experiment_path), map_location='cpu')
+            print(checkpoint.keys())
+        primal_model.load_state_dict(checkpoint['model_state_dict'])
+
+        if best:
+            checkpoint = torch.load('{}/best_dual_model.pt'.format(experiment_path), map_location='cpu')
+        else:
+            checkpoint = torch.load('{}/dual_model.pt'.format(experiment_path), map_location='cpu')
+        dual_model.load_state_dict(checkpoint['model_state_dict'])
+        dual_trained = True
 
     executer = Trainer(primal_model=primal_model.to(device), dual_model=dual_model.to(device), args=args, device=device, dual_trained=dual_trained)
     test_results, unrolling_results, random_results, full_power_results = executer.eval(loader, num_iters=NUM_EPOCHS, 
                                                                                         adjust_constraints=args.adjust_constraints, fix_mu_uncons=fix_mu_uncons)
     modes_list = ['SA', 'random', 'full_power']
-    if args.training_modes[0] == 'dual':
+    if 'dual' in args.training_modes:
         assert unrolling_results is not None, 'unrolling results are None'
         modes_list.append('unrolling')
 
@@ -134,13 +148,14 @@ def main(experiment_path, mu_uncons=0.0):
 
     all_epoch_results['SA', 'test_mu_over_time'].append(test_results['test_mu_over_time'])
     all_epoch_results['SA', 'L_over_time'].append(test_results['L_over_time'])
-    if args.training_modes[0] == 'dual':
+    if 'dual' in args.training_modes:
         all_epoch_results['unrolling', 'test_mu_over_time'].append(unrolling_results['test_mu_over_time'])
+        all_epoch_results['unrolling', 'dual_fn'].append(np.stack(unrolling_results['dual_fn']))
 
-    plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=NUM_EPOCHS, unrolling_iters=args.dual_num_blocks+1, pathname='{}/figs/{}_'.format(experiment_path, args.mu_uncons))
-    plot_final_percentiles_comparison(all_epoch_results, pathname='{}/figs/{}_'.format(experiment_path, args.mu_uncons))
+    plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=NUM_EPOCHS, unrolling_iters=args.dual_num_blocks+1, pathname='{}/figs/{}_{}_'.format(experiment_path, args.mu_uncons, best))
+    plot_final_percentiles_comparison(all_epoch_results, pathname='{}/figs/{}_{}_'.format(experiment_path, args.mu_uncons, best))
     if args.constrained_subnetwork < 1:
-        plot_subnetworks(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)) , args.P_max, args.n, pathname='{}/figs/{}_'.format(experiment_path, args.mu_uncons))
+        plot_subnetworks(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)) , args.P_max, args.n, pathname='{}/figs/{}_{}_'.format(experiment_path, args.mu_uncons, best))
 
 
     print('ok!')
@@ -149,12 +164,14 @@ def main(experiment_path, mu_uncons=0.0):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DA Unrolling - Wireless Allocation Test')
-    parser.add_argument('--experiment_path', type=str, default='subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_100.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/24dc8c93')
+    parser.add_argument('--experiment_path', type=str, default='subnetwork_m_100_R_2000_Pmax_0_regular_ss_1.0_resilience_0.0_depth_2_MUmax_5.0_rMin_1.5_lr_0.0001/91f4e21e')
+    parser.add_argument('--best', action='store_true', help='use best model')
     # primal: subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/842c4d5c
+    # subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_100.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/24dc8c93
     test_args = parser.parse_args()
 
     for mu_uncons in [0.0]:
         print(test_args.experiment_path, mu_uncons)
-        main('results/{}'.format(test_args.experiment_path), mu_uncons=mu_uncons)
+        main('results/{}'.format(test_args.experiment_path), mu_uncons=mu_uncons, best=True)
     print('ok!')
 

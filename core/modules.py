@@ -7,6 +7,9 @@ import torch.nn as nn
 from collections import defaultdict
 import numpy as np
 
+from torch_geometric.transforms import GDC
+
+
 def lagrangian_fn(rates, mu, r_min, p=None, metric='rates', constrained_subnetwork=None):
     assert rates.shape == mu.shape, "Rates and mu must have the same shape"
     if rates.shape != r_min.shape:
@@ -168,6 +171,7 @@ class DualModel(nn.Module):
         self.dual_num_blocks = args.dual_num_blocks if hasattr(args, 'dual_num_blocks') else args.num_blocks
         self.mu_uncons = args.mu_uncons
         self.r_min = args.r_min
+        self.duality_gap = getattr(args, 'duality_gap', False)
 
         if eval_mode == 'unrolling':
             self.blocks = nn.ModuleList()
@@ -225,12 +229,19 @@ class DualModel(nn.Module):
                 violation_list.append(violation.sum(1).abs())
             Lagrangian_list.append(L)
 
+        dual_fn = outputs_list[-1][-1] * self.n
+        mean_objective = rates.sum(dim=-1).mean()
+        dual_gap = mean_objective - dual_fn
+
+        if self.duality_gap:
+            L += torch.abs(dual_gap)
+
         # constraine loss
         if constraint_eps is not None:
             constraint_loss = self.descending_constraints(torch.stack(violation_list), constraint_eps)
-            return L.mean(), constraint_loss.unsqueeze(1)
+            return L.mean(), constraint_loss.unsqueeze(1), dual_gap
         else:
-            return L.mean(), torch.zeros_like(L.mean()).to(self.device)
+            return L.mean(), torch.zeros_like(L.mean()).to(self.device), dual_gap
 
 
 
@@ -240,7 +251,7 @@ class DualModel(nn.Module):
 
 
     def DA(self, primal_model, data, lr_dual, resilient_weight_decay, n, r_min, noise_var, num_iters, ss_param, 
-           mu_init, mu_uncons, device, adjust_constraints=True, fix_mu_uncons=True):
+           mu_init, mu_uncons, device, adjust_constraints=False, fix_mu_uncons=True, num_samplers=1):
         primal_model.eval()
         if hasattr(primal_model, 'cons_lvl'):
             delattr(primal_model, 'cons_lvl')
@@ -249,6 +260,25 @@ class DualModel(nn.Module):
         edge_index_l, edge_weight_l, a_l, transmitters_index, num_graphs = \
             data.edge_index_l, data.edge_weight_l, data.weighted_adjacency_l, \
             data.transmitters_index, getattr(data, 'num_graphs', 1)
+        
+        edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
+                                                                    num_nodes=n, method="threshold", eps=2e-2)
+        
+        if num_samplers > 1 and num_graphs == 1:
+            edge_index_expanded = []
+            edge_weight_expanded = []
+            for s in range(num_samplers):
+                offset = s * n
+                curr_edge_index = edge_index_l.clone()
+                curr_edge_index += offset
+                edge_index_expanded.append(curr_edge_index)
+                edge_weight_expanded.append(edge_weight_l)
+
+            edge_index_l = torch.cat(edge_index_expanded, dim=1)
+            edge_weight_l = torch.cat(edge_weight_expanded)
+            a_l = a_l.repeat(num_samplers, 1, 1)
+            transmitters_index = torch.arange(num_samplers*n).to(self.device)
+            num_graphs = num_samplers * num_graphs
 
         mu_over_time = []
         L_over_time = []
