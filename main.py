@@ -52,29 +52,32 @@ def make_parser():
     # training parameters
     parser.add_argument('--training_modes', type=list, default=['primal', 'dual'], help='Training modes for the model')
     parser.add_argument('--supervised', action='store_true', default=False, help='Supervised training')
-    parser.add_argument('--duality_gap', action='store_true', default=True, help='Add duality gap to training objective')
+    parser.add_argument('--duality_gap', action='store_true', default=False, help='Add duality gap to training objective')
+    parser.add_argument('--noisy_training', action='store_true', default=True, help='Add noise to the layers outputs during raining')
+    parser.add_argument('--dual_training_loss', type=str, default='complementary_slackness', choices=['lagrangian', 'complementary_slackness'], help='Loss function for dual training')
+    parser.add_argument("--rates_prop_grads", action="store_true", default=False, help="Propagate gradients through the rate calculation")
     parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
     parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size/No. of graphs in a batch')
-    parser.add_argument('--num_samplers', type=int, default=64, help='Number of samplers for the data loader')
+    parser.add_argument('--num_samplers', type=int, default=128, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=1, help='Number of training epochs')
-    parser.add_argument('--num_epochs_dual', type=int, default=5, help='Number of training epochs')
+    parser.add_argument('--num_epochs_dual', type=int, default=1, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=1000, help='Number of training cycles')
-    parser.add_argument('--device', type=str, default='cuda:1', help='Device to use for training (e.g., cuda:0, cpu)')
+    parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training (e.g., cuda:0, cpu)')
 
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_primal_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers in trainnig primal model')
 
-    parser.add_argument('--lr_dual_main', type=float, default=1e-4, help='Learning rate for dual networks')
-    parser.add_argument('--lr_dual_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
+    parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
+    parser.add_argument('--lr_dual_multiplier', type=float, default=1e-6, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
 
     parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
     parser.add_argument('--lr_DA_dual', type=float, default=0.05, help='Learning rate for dual variables in the DA algorithm')
 
     parser.add_argument('--training_resilient_decay', type=float, default=0.0, help='Learning rate for resilient dual variables')
     parser.add_argument('--thresh_resilient', type=float, default=2.5, help='Threshold for resilient dual variables')
-    parser.add_argument('--evaluation_interval', type=int, default=1, help='Interval for evaluating the model')
+    parser.add_argument('--evaluation_interval', type=int, default=5, help='Interval for evaluating the model')
     
     # architecture parameters
     parser.add_argument('--architecture', type=str, default='PrimalGNN', help='Architecture of the model')
@@ -88,11 +91,13 @@ def make_parser():
 
     parser.add_argument('--dual_k_hops', type=int, default=2, help='Number of hops in the GNN')
     parser.add_argument('--dual_hidden_size', type=list, default=256, help='Number of GNN features in different layers')
-    parser.add_argument('--dual_num_sublayers', type=int, default=2, help='Number of dual sub-layers')
+    parser.add_argument('--dual_num_sublayers', type=int, default=3, help='Number of dual sub-layers')
     parser.add_argument('--dual_num_blocks', type=int, default=6, help='Number of blocks in the dual model')
 
     parser.add_argument('--primal_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the GNN')
-    parser.add_argument('--dual_norm_layer', type=str, default='batch', choices=['batch', 'layer', 'graph'], help='Normalization layer for the dual model')
+    parser.add_argument('--dual_norm_layer', type=str, default='layer', choices=['batch', 'layer', 'graph'], help='Normalization layer for the dual model')
+    parser.add_argument('--primal_norm_layer_mode', type=str, default='node', choices=['node', 'graph'], help='Normalization layer mode for the GNN')
+    parser.add_argument('--dual_norm_layer_mode', type=str, default='node', choices=['node', 'graph'], help='Normalization layer mode for the dual model')
     parser.add_argument('--dropout_rate', type=float, default=0.2, help='Dropout rate')
     parser.add_argument('--conv_layer_normalize', type=bool, default=False, help='Convolutional layer normalization')
 
@@ -100,7 +105,7 @@ def make_parser():
     parser.add_argument('--lambda_sampler', type=str, default='hybrid', choices=['hybrid', 'DA', 'random'], help='where to sample the dual variables from')
     parser.add_argument('--mu_distribution', type=str, default='uniform', choices=['uniform', 'exponential'], help='Distribution of the dual variables')
     parser.add_argument('--normalize_mu', action='store_true', default=False, help='Normalize the dual variables while training the primal model')
-    parser.add_argument('--mu_max', type=float, default=5.0, help='maximum value of the dual variables in the training set of the primal model')
+    parser.add_argument('--mu_max', type=float, default=1.0, help='maximum value of the dual variables in the training set of the primal model')
     parser.add_argument('--zero_probability', type=float, default=0.2, help='Probability of zeroing out the dual variables')
     parser.add_argument('--all_zeros', action='store_true', default=False, help='Use all zeros for the dual variables')
     # dual variable values for unrolling
@@ -117,8 +122,8 @@ def make_parser():
 
 
 def main(args):
-    assert args.evaluation_interval <= args.num_epochs_primal, 'Evaluation interval must be less than the number of epochs for primal model'
-    assert args.evaluation_interval <= args.num_epochs_dual, 'Evaluation interval must be less than the number of epochs for dual model'
+    # assert args.evaluation_interval <= args.num_epochs_primal, 'Evaluation interval must be less than the number of epochs for primal model'
+    # assert args.evaluation_interval <= args.num_epochs_dual, 'Evaluation interval must be less than the number of epochs for dual model'
 
     num_samples = {'train': args.num_samples_train, 'valid': args.num_samples_test, 'test': args.num_samples_test}
     N = -174 - 30 + 10 * np.log10(args.BW)
@@ -151,7 +156,7 @@ def main(args):
     if args.training_modes[0] == 'dual':
         if args.unrolled_primal:
             # experiment_path = './results/subnetwork_m_100_R_5000_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_60.0_rMin_1.5_lr_0.0001/7c3a5193' 
-            experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/842c4d5c'
+            experiment_path = './results/subnetwork_m_100_R_2000_Pmax_0_regular_ss_1.0_resilience_0.0_depth_2_MUmax_1.0_rMin_1.5_lr_0.0001/253c0ea3'
         else:
             if args. normalize_mu:
                 experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/bb3c2c94' #7fe6ab7b
@@ -168,9 +173,9 @@ def main(args):
     
     
     loader = {}
-    max_num_samples = {'primal': 512, 'dual': args.num_samples_train}
+    max_num_samples = {'primal': 256, 'dual': args.num_samples_train}
 
-    if True: #not args.supervised:
+    if not args.supervised:
         for mode in args.training_modes:
             loader[mode] = {}
             batch_size = {'train': args.batch_size if mode=='dual' else 1, 'valid':args.batch_size, 'test': args.batch_size}
@@ -262,10 +267,7 @@ def main(args):
     os.environ['TORCH_USE_CUDA_DSA'] = "1"
     dual_resilient_decay = args.dual_resilient_decay
     all_epoch_results = defaultdict(list)
-    # mu_test = args.mu_max * torch.rand(args.batch_size * args.m, 1).to(device)
-    # mu_test[-1] = torch.zeros_like(mu_test[-1])
-    # L_test = []
-    best_loss = {mode: np.inf for mode in args.training_modes}
+    best_loss = np.inf # {mode: np.inf for mode in args.training_modes}
 
     num_epochs = {'primal': args.num_epochs_primal, 'dual': args.num_epochs_dual}
     training_multipliers ={
@@ -274,119 +276,105 @@ def main(args):
     }
     print('Starting the training and evaluation process ...')
     for cycle in tqdm(range(args.num_cycles)):
-        if cycle > 0:
-            best_loss['primal'] = np.inf
-            checkpoint = torch.load('./results/{}/best_primal_model.pt'.format(experiment_name), map_location='cpu')
-            primal_model.load_state_dict(checkpoint['model_state_dict'])
-            # checkpoint = torch.load('./results/{}/best_dual_model.pt'.format(experiment_name), map_location='cpu')
-            # dual_model.load_state_dict(checkpoint['model_state_dict'])
-
         for mode in args.training_modes:
             args.dual_resilient_decay = dual_resilient_decay if mode == 'dual' else 0.0
-            if args.supervised and mode == 'dual':
-                del loader
-                if os.path.exists('{}_target.json'.format(path)):
-                    data_list_supervised = torch.load('{}_target.json'.format(path), map_location='cpu')
-                else: 
-                    data_list_supervised = defaultdict(list)
-                    for phase in batch_size.keys():
-                        for data in tqdm(data_list[phase]):
-                            data = data.to(device)
-                            target = dual_model.DA(primal_model, data, 0.1, 100, #args.dual_resilient_decay, 
-                                                    args.n, args.r_min, args.noise_var, 200, args.ss_param,
-                                                    args.mu_init, args.mu_uncons, device, adjust_constraints=False)
+            if mode == 'primal' and (cycle % 20 !=0 or cycle == 0):
+                continue
+            # if args.supervised and mode == 'dual':
+            #     del loader
+            #     if os.path.exists('{}_target.json'.format(path)):
+            #         data_list_supervised = torch.load('{}_target.json'.format(path), map_location='cpu')
+            #     else: 
+            #         data_list_supervised = defaultdict(list)
+            #         for phase in batch_size.keys():
+            #             for data in tqdm(data_list[phase]):
+            #                 data = data.to(device)
+            #                 target = dual_model.DA(primal_model, data, 0.1, 100, #args.dual_resilient_decay, 
+            #                                         args.n, args.r_min, args.noise_var, 200, args.ss_param,
+            #                                         args.mu_init, args.mu_uncons, device, adjust_constraints=False)
                             
-                            data.target = torch.stack(target[0])[-1].unsqueeze(1)       # Mu*
-                            data_list_supervised[phase].append(data)
-                    path = '{}_target.json'.format(path)
-                    torch.save(data_list_supervised, path)
+            #                 data.target = torch.stack(target[0])[-1].unsqueeze(1)       # Mu*
+            #                 data_list_supervised[phase].append(data)
+            #         path = '{}_target.json'.format(path)
+            #         torch.save(data_list_supervised, path)
 
-                for phase in data_list_supervised:
-                    loader[mode] = {}
-                    batch_size = {'train': args.batch_size if mode=='dual' else 1, 'valid': args.batch_size, 'test': args.batch_size}
-                    for phase in data_list:
-                        loader[mode][phase] = DataLoader(WirelessDataset(data_list[phase][:max_num_samples[mode]]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
+            #     for phase in data_list_supervised:
+            #         loader[mode] = {}
+            #         batch_size = {'train': args.batch_size if mode=='dual' else 1, 'valid': args.batch_size, 'test': args.batch_size}
+            #         for phase in data_list:
+            #             loader[mode][phase] = DataLoader(WirelessDataset(data_list[phase][:max_num_samples[mode]]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
 
             for epoch in tqdm(range(num_epochs[mode])):
                 for phase in loader[mode]:
                     if phase == 'train':
-                        train_loss, multipliers = trainer.train(epoch, loader[mode][phase], training_multipliers[mode], mode=mode)
+                        _, multipliers = trainer.train(epoch, loader[mode][phase], training_multipliers[mode], mode=mode)
                         training_multipliers[mode] = multipliers
+                    
+                    elif phase == 'valid' and mode == 'dual':
+                        with torch.no_grad():
+                            eval_loss = trainer.validate(loader[mode][phase])
 
-                        #save best model
-                        if train_loss < best_loss[mode]:
-                            best_loss[mode] = train_loss
-                            if mode == 'primal':
-                                # Save best model with metadata for better tracking
-                                checkpoint = {
+                        if args.use_wandb:
+                            wandb.log({'eval/evaluation loss': eval_loss})
+
+                        if eval_loss < best_loss:
+                            best_loss = eval_loss
+                            checkpoint = {
                                     'model_state_dict': trainer.primal_model.state_dict(),
                                     'optimizer_state_dict': trainer.primal_optimizer.state_dict(),
                                     'loss': best_loss,
                                     'epoch': epoch,
                                     'cycle': cycle,
                                 }
-                                torch.save(checkpoint, './results/{}/best_primal_model.pt'.format(experiment_name))
-                                if args.use_wandb:
-                                    wandb.run.summary.update({"best_primal_loss": best_loss, "best_primal_epoch": epoch*(1+cycle)})
-                                    wandb.log({'best primal training loss': train_loss})    
+                            torch.save(checkpoint, './results/{}/best_primal_model.pt'.format(experiment_name))
 
-                                primal_results = trainer.eval_primal(loader[mode]['test'], num_iters=args.num_iters)  
-                                plot_testing(primal_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, pathname='./results/{}/figs/{}_'.format(experiment_name, epoch))
-
-                            if mode == 'dual':
-                                # Save best dual model with metadata
-                                checkpoint = {
+                            checkpoint = {
                                     'model_state_dict': trainer.dual_model.state_dict(),
                                     'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
                                     'loss': best_loss,
                                     'epoch': epoch,
+                                    'cycle': cycle,
                                 }
-                                torch.save(checkpoint, './results/{}/best_dual_model.pt'.format(experiment_name))
-                                if args.use_wandb:
-                                    wandb.run.summary.update({"best_dual_loss": best_loss, "best_dual_epoch": epoch})
-                                    wandb.log({'best dual training loss': train_loss})
-                    
-                    else:
+                            torch.save(checkpoint, './results/{}/best_dual_model.pt'.format(experiment_name))
 
-                        if mode == 'primal':
-                            # L = trainer.primal_model.sanity_check(next(iter(loader[mode][phase]))[0], mu_test, args.noise_var, args.ss_param)
-                            # L_test.append(L)
-                            continue
+                            if args.use_wandb:
+                                wandb.run.summary.update({"best_eval_loss": best_loss, "best_epoch": epoch})
+                                wandb.log({'eval/best evaluation loss': eval_loss})
 
-                        if mode == 'dual' and (epoch+1)%args.evaluation_interval == 0:
-                            SA_results, unrolling_results, random_results, full_power_results = trainer.eval(loader[mode][phase], num_iters=args.num_iters,
-                                                                                                             adjust_constraints=False)
+                            primal_results = trainer.eval_primal(loader[mode]['test'], num_iters=args.num_iters)  
+                            plot_testing(primal_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, pathname='./results/{}/figs/{}_'.format(experiment_name, epoch))
 
-                            modes_list = ['SA', 'random', 'full_power', 'unrolling']
-                            for test_mode in modes_list:
-                                if mode == 'full_power':
-                                    test_results = full_power_results
-                                elif test_mode == 'random':
-                                    test_results = random_results 
-                                elif test_mode == 'unrolling':
-                                    test_results = unrolling_results
-                                else:
-                                    test_results = SA_results
+                                # SA_results, unrolling_results, random_results, full_power_results = trainer.eval(loader[mode][phase], num_iters=args.num_iters,
+                                #                                                                                 adjust_constraints=False)
 
-                                all_epoch_results[test_mode, 'rate_mean'].append(np.stack(test_results['rate_mean']).mean())
-                                for percentile in [5, 10, 15, 20, 30, 40, 50]:
-                                    all_epoch_results[mode, f'rate_{percentile}th_percentile'].append(np.stack(test_results[f'rate_{percentile}th_percentile']).mean())
-                                all_epoch_results[test_mode, 'all_rates'].append(test_results['all_rates'])
-                                all_epoch_results[test_mode, 'all_Ps'].append(test_results['all_Ps'])
-                                all_epoch_results[test_mode, 'violation_rate'].append(np.stack(test_results['violation_rate']).mean())
-                                all_epoch_results[test_mode, 'mean_violation'].append(np.stack(test_results['mean_violation']).mean())
-                                all_epoch_results[test_mode, 'constrained_mean_rate'].append(np.stack(test_results['constrained_mean_rate']).mean())
-                                all_epoch_results[test_mode, 'unconstrained_mean_rate'].append(np.stack(test_results['unconstrained_mean_rate']).mean())
-                            
-                            all_epoch_results['SA', 'test_mu_over_time'].append(SA_results['test_mu_over_time'])
-                            all_epoch_results['SA', 'L_over_time'].append(test_results['L_over_time'])
-                            if mode == 'dual':
-                                all_epoch_results['unrolling', 'test_mu_over_time'].append(unrolling_results['test_mu_over_time'])
-                                all_epoch_results['unrolling', 'dual_fn'].append(np.stack(unrolling_results['dual_fn']))
+                                # modes_list = ['SA', 'random', 'full_power', 'unrolling']
+                                # for test_mode in modes_list:
+                                #     if mode == 'full_power':
+                                #         test_results = full_power_results
+                                #     elif test_mode == 'random':
+                                #         test_results = random_results 
+                                #     elif test_mode == 'unrolling':
+                                #         test_results = unrolling_results
+                                #     else:
+                                #         test_results = SA_results
+
+                                #     all_epoch_results[test_mode, 'rate_mean'].append(np.stack(test_results['rate_mean']).mean())
+                                #     for percentile in [5, 10, 15, 20, 30, 40, 50]:
+                                #         all_epoch_results[mode, f'rate_{percentile}th_percentile'].append(np.stack(test_results[f'rate_{percentile}th_percentile']).mean())
+                                #     all_epoch_results[test_mode, 'all_rates'].append(test_results['all_rates'])
+                                #     all_epoch_results[test_mode, 'all_Ps'].append(test_results['all_Ps'])
+                                #     all_epoch_results[test_mode, 'violation_rate'].append(np.stack(test_results['violation_rate']).mean())
+                                #     all_epoch_results[test_mode, 'mean_violation'].append(np.stack(test_results['mean_violation']).mean())
+                                #     all_epoch_results[test_mode, 'constrained_mean_rate'].append(np.stack(test_results['constrained_mean_rate']).mean())
+                                #     all_epoch_results[test_mode, 'unconstrained_mean_rate'].append(np.stack(test_results['unconstrained_mean_rate']).mean())
+                                
+                                # all_epoch_results['SA', 'test_mu_over_time'].append(SA_results['test_mu_over_time'])
+                                # all_epoch_results['SA', 'L_over_time'].append(test_results['L_over_time'])
+                                # if mode == 'dual':
+                                #     all_epoch_results['unrolling', 'test_mu_over_time'].append(unrolling_results['test_mu_over_time'])
+                                #     all_epoch_results['unrolling', 'dual_fn'].append(np.stack(unrolling_results['dual_fn']))
 
                         
-
-                            
 
         ############################# save the results and model ############################
         # save the results and overwrite the saved model with the current model 
@@ -395,15 +383,15 @@ def main(args):
         checkpoint = {
                         'model_state_dict': trainer.primal_model.state_dict(),
                         'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
-                        'loss': train_loss,
-                        'epoch': epoch,
+                        'loss': eval_loss,
+                        'epoch': epoch*cycle,
                     }
         torch.save(checkpoint, './results/{}/primal_model.pt'.format(experiment_name))
         checkpoint = {
                         'model_state_dict': trainer.dual_model.state_dict(),
                         'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
-                        'loss': train_loss,
-                        'epoch': epoch,
+                        'loss': eval_loss,
+                        'epoch': epoch*cycle,
                     }
         torch.save(checkpoint, './results/{}/dual_model.pt'.format(experiment_name))
 
@@ -414,11 +402,11 @@ def main(args):
     # fig.savefig('./results/{}/figs/L_test.png'.format(experiment_name))
 
 
-    # Plotting results
-    plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, unrolling_iters=args.dual_num_blocks+1, pathname='./results/{}/figs'.format(experiment_name))
-    plot_final_percentiles_comparison(all_epoch_results, f_min=args.r_min, pathname='./results/{}/figs'.format(experiment_name))
-    if args.constrained_subnetwork < 1:
-        plot_subnetworks(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)) , args.P_max, args.n, pathname='{}/figs/{}_'.format(experiment_path, args.mu_uncons))
+    # # Plotting results
+    # plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, unrolling_iters=args.dual_num_blocks+1, pathname='./results/{}/figs'.format(experiment_name))
+    # plot_final_percentiles_comparison(all_epoch_results, f_min=args.r_min, pathname='./results/{}/figs'.format(experiment_name))
+    # if args.constrained_subnetwork < 1:
+    #     plot_subnetworks(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)) , args.P_max, args.n, pathname='{}/figs/{}_'.format(experiment_path, args.mu_uncons))
 
     print('Training complete!')
     

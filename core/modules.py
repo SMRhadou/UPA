@@ -10,6 +10,23 @@ import numpy as np
 from torch_geometric.transforms import GDC
 
 
+
+def complementary_slackness(rates, mu, r_min, rates_prop_grads=False, constrained_subnetwork=None):
+    assert rates.shape == mu.shape, "Rates and mu must have the same shape"
+    if rates.shape != r_min.shape:
+        r_min = r_min.view(rates.shape[0], -1)
+
+    if constrained_subnetwork is not None:
+        rates = rates[:, :int(np.floor(constrained_subnetwork*rates.shape[1]))]
+        r_min = r_min[:, :int(np.floor(constrained_subnetwork*r_min.shape[1]))]
+        mu = mu[:, :int(np.floor(constrained_subnetwork*mu.shape[1]))]
+
+    if not rates_prop_grads:
+        rates = rates.detach()
+    
+    return torch.sum((mu * (r_min - rates)), dim=1)
+
+
 def lagrangian_fn(rates, mu, r_min, p=None, metric='rates', constrained_subnetwork=None):
     assert rates.shape == mu.shape, "Rates and mu must have the same shape"
     if rates.shape != r_min.shape:
@@ -53,7 +70,8 @@ class PrimalModel(nn.Module):
                 norm_layer = getattr(args, 'primal_norm_layer', 'batch')  # Default to 0.0 if not defined
                 self.model = PrimalGNN(num_features_list=self.num_features_list, 
                             P_max=args.P_max, k_hops = args.primal_k_hops, norm_layer = norm_layer, dropout_rate=args.dropout_rate,
-                            conv_layer_normalize = args.conv_layer_normalize
+                            conv_layer_normalize = args.conv_layer_normalize,
+                            norm_layer_mode=getattr(args, 'primal_norm_layer_mode', 'node'),
                             ).to(device)
         else:
             self.blocks = nn.ModuleList()
@@ -71,7 +89,7 @@ class PrimalModel(nn.Module):
         div_p = self.blocks[block_id](input, edge_index_l, edge_weight_l, transmitters_index, activation=None)
         return div_p
 
-    def forward(self, mu, edge_index_l, edge_weight_l, transmitters_index):
+    def forward(self, mu, edge_index_l, edge_weight_l, transmitters_index, noisy_training=False):
         if not hasattr(self, 'cons_lvl'):
             m = mu.view(-1, self.args.n).shape[0]
             self.cons_lvl = torch.cat([self.args.r_min * torch.ones(m, int(np.floor(self.args.constrained_subnetwork*self.args.n))).to(self.device), 
@@ -88,6 +106,9 @@ class PrimalModel(nn.Module):
             for block_id in range(self.args.primal_num_blocks):
                 x = torch.cat((p, mu/self.normalized_mu, self.cons_lvl), dim=1)
                 p = p + self.sub_forward(block_id, x, edge_index_l, edge_weight_l, transmitters_index)
+                if noisy_training and block_id < self.args.primal_num_blocks - 1:
+                    noise_var = p.norm(p=2, dim=1).mean() * np.exp(-1*(block_id+1))
+                    p = p + noise_var * torch.randn_like(p)
                 p = self.args.P_max * torch.sigmoid(p)
                 # p = torch.clamp(p, min=1e-5)
                 outputs_list.append(p)
@@ -167,7 +188,7 @@ class DualModel(nn.Module):
         self.P_max = args.P_max
         self.constrained_subnetwork = args.constrained_subnetwork
         self.resilient_weight_deacay = getattr(args, 'resilient_weight_decay', 0.0)
-        self.normalized_mu = 1# args.mu_max if args.normalize_mu else 1
+        self.normalized_mu = 1 #args.mu_max if args.normalize_mu else 1
         self.dual_num_blocks = args.dual_num_blocks if hasattr(args, 'dual_num_blocks') else args.num_blocks
         self.mu_uncons = args.mu_uncons
         self.r_min = args.r_min
@@ -183,6 +204,7 @@ class DualModel(nn.Module):
                     self.blocks.append(PrimalGNN(num_features_list=self.num_features_list, 
                         P_max=5.0, k_hops = args.dual_k_hops, norm_layer = norm_layer, dropout_rate = args.dropout_rate,
                         conv_layer_normalize = args.conv_layer_normalize,
+                        norm_layer_mode=getattr(args, 'dual_norm_layer_mode', 'node'),
                         primal=False
                         ).to(device))
 
@@ -192,7 +214,7 @@ class DualModel(nn.Module):
             m = mu.view(-1, self.n).shape[0]
             self.cons_lvl = torch.cat([self.r_min * torch.ones(m, int(np.floor(self.constrained_subnetwork*self.n))).to(self.device), 
                                         torch.zeros(m, int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)], dim=1).view(-1, 1)
-        x = torch.cat((p/self.P_max, mu/self.normalized_mu, self.cons_lvl), dim=1)
+        x = torch.cat((p, mu/self.normalized_mu, self.cons_lvl), dim=1)
         mu = self.blocks[block_id](x, edge_index_l, edge_weight_l, transmitters_index, activation=None)
         if self.constrained_subnetwork < 1:
             mu = mu.view(-1, self.n)
@@ -208,6 +230,9 @@ class DualModel(nn.Module):
         target = kwargs.get('target', None)
         self.resilient_weight_deacay = kwargs.get('resilient_weight_decay', 0.0)
         supervised = kwargs.get('supervised', False)
+        dual_training_loss = kwargs.get('dual_training_loss', 'lagrangian')
+        constrained_subnetwork = kwargs.get('constrained_subnetwork', None)
+        rates_prop_grads = kwargs.get('rates_prop_grads', False)
 
         for (mu, p, rates, _) in outputs_list:
             rates, mu, p = rates.view(num_graphs, self.n), mu.view(num_graphs, self.n), p.view(num_graphs, self.n)
@@ -219,7 +244,13 @@ class DualModel(nn.Module):
                 target = target.view(num_graphs, self.n)
                 L = ((mu[:, :int(np.floor(self.constrained_subnetwork*self.n))] - target[:, :int(np.floor(self.constrained_subnetwork*self.n))]) ** 2).mean(1)
             else:
-                L = -1 * lagrangian_fn(rates, mu, self.cons_lvl, p=p, metric=metric, constrained_subnetwork=self.constrained_subnetwork)
+                if dual_training_loss == 'lagrangian':
+                    L = -1 * lagrangian_fn(rates, mu, self.cons_lvl, p=p, metric=metric, constrained_subnetwork=constrained_subnetwork)
+                elif dual_training_loss == 'complementary_slackness':
+                    L = -1 * complementary_slackness(rates, mu, self.cons_lvl, rates_prop_grads=False, constrained_subnetwork=constrained_subnetwork)
+                else:
+                    raise ValueError(f"Unknown dual training loss: {dual_training_loss}")
+                
                 
             # resilience loss
             if self.resilient_weight_deacay > 0:

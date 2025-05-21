@@ -3,6 +3,9 @@ import numpy as np
 from utils import calc_rates
 import wandb
 
+from functorch import make_functional, vmap
+from torch.func import functional_call, jacrev
+
 from collections import defaultdict
 from torch_geometric.transforms import GDC
 
@@ -61,7 +64,8 @@ class Trainer():
         return mu.view(-1, 1)
 
 
-    def unroll_DA(self, data=None, edge_index_l=None, edge_weight_l=None, a_l=None, transmitters_index=None, num_graphs=None, mode='dual'):
+    def unroll_DA(self, data=None, edge_index_l=None, edge_weight_l=None, a_l=None, transmitters_index=None, num_graphs=None, 
+                  mode='dual', noisy_training=False):
         if data is not None:
             data = data.to(self.device)
             edge_index_l, edge_weight_l, a_l, transmitters_index, num_graphs = \
@@ -90,7 +94,12 @@ class Trainer():
             L, _ = self.primal_model.loss(rates, mu, p, metric='power' if self.primal_model.args.metric == 'power' else 'rates',
                                        constrained_subnetwork=None)         # -1 * dual_function
             outputs_list.append((mu, p, rates, -1*L/ self.args.n))
-            mu = mu + self.dual_model(block_id, mu, p, edge_index_l, edge_weight_l, transmitters_index)
+            mu = mu + self.dual_model(block_id, mu, rates, edge_index_l, edge_weight_l, transmitters_index)
+            if noisy_training and block_id < self.dual_model.dual_num_blocks - 1:
+                noise_var = mu.detach().max() * np.exp(-1*(block_id+1))
+                rand_noise = torch.cat((noise_var * torch.randn(num_graphs, int(np.floor(self.args.constrained_subnetwork*self.args.m))).to(self.device), 
+                        torch.zeros(num_graphs, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
+                mu += rand_noise.view(-1,1).detach()
             mu = torch.relu(mu)
         
         # Primal recovery
@@ -186,7 +195,7 @@ class Trainer():
                                                                     self.args.mu_init, self.mu_uncons, self.device, False, True, num_samplers=10)
                     mu_over_time = torch.stack(mu_over_time).reshape(-1, self.args.n)
                     # Choose 32 random rows from mu_over_time
-                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers//2]
+                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers//4]
                     mu = mu_over_time[selected_indices].view(-1,1).to(self.device)
                 
                     assert len(self.args.training_modes) == 2
@@ -198,14 +207,19 @@ class Trainer():
                     mu = torch.cat((mu, mu_over_time[selected_indices].view(-1,1).to(self.device)), dim=0)
                     del outputs_list
 
+                    random_elements = num_graphs*num_samplers*self.args.n - mu.shape[0]
+                    mu_random = self.multiplier_sampler(random_elements, self.args.mu_max, self.args.zero_probability, 
+                             dist=self.args.mu_distribution, all_zeros=self.args.all_zeros).to(self.device)
+                    mu = torch.cat((mu, mu_random.view(-1, 1)), dim=0)
+
                 elif self.args.lambda_sampler == 'random':
                     mu = self.multiplier_sampler(num_graphs*num_samplers*self.args.n, self.args.mu_max, self.args.zero_probability, 
                              dist=self.args.mu_distribution, all_zeros=self.args.all_zeros).to(self.device)
 
                 mu = mu.detach()
-                rand_noise = torch.cat((0.01 * torch.rand(num_samplers, int(np.floor(self.args.constrained_subnetwork*self.args.m))).to(self.device), 
+                rand_noise = torch.cat((1 + 0.1 * (torch.rand(num_samplers, int(np.floor(self.args.constrained_subnetwork*self.args.m)))-0.5).to(self.device), 
                         torch.zeros(num_samplers, int(np.ceil((1-self.args.constrained_subnetwork)*self.args.m))).to(self.device)), dim=1)
-                mu += rand_noise.view(-1, 1)
+                mu *= rand_noise.view(-1, 1)
                 
 
                 if hasattr(self.primal_model, 'cons_lvl'):
@@ -214,7 +228,7 @@ class Trainer():
                 
                 
                 # Forward pass and Losses
-                p = self.primal_model(mu, edge_index_l, edge_weight_l, transmitters_index)    # MU is normalized to [0, 1]
+                p = self.primal_model(mu, edge_index_l, edge_weight_l, transmitters_index, noisy_training=self.args.noisy_training)    # MU is normalized to [0, 1]
                 gamma = torch.ones(num_samplers*num_graphs * self.args.n, 1).to(self.device) 
                 # if p is not a list
                 if not isinstance(p, list):
@@ -274,11 +288,12 @@ class Trainer():
                 self.dual_model.train()
                 self.primal_model.eval()
 
-                if epoch == 0:
-                    self.multipliers_table = []
+                # if epoch == 0:
+                #     self.multipliers_table = []
                 
                 # Forward pass
-                outputs_list = self.unroll_DA(edge_index_l=edge_index_l, edge_weight_l=edge_weight_l, a_l=a_l, transmitters_index=transmitters_index, num_graphs=num_graphs)
+                outputs_list = self.unroll_DA(edge_index_l=edge_index_l, edge_weight_l=edge_weight_l, a_l=a_l, transmitters_index=transmitters_index, 
+                                              num_graphs=num_graphs*num_samplers, noisy_training=self.args.noisy_training)
                 # self.multipliers_table.append(torch.from_numpy(np.stack([
                 #                         outputs_list[i][0].view(num_graphs,self.args.n).detach().cpu().numpy() for i in range(len(outputs_list))
                 #                         ])).view(-1, self.args.n))
@@ -293,14 +308,18 @@ class Trainer():
                     
 
                 # calculate the loss
-                loss, constraints_loss, dual_gap = self.dual_model.loss(outputs_list, self.args.r_min, num_graphs, constraint_eps=0.0, metric=self.args.metric,
-                                                              resilient_weight_decay=self.args.dual_resilient_decay, 
-                                                              supervised=self.args.supervised, target=data.target if self.args.supervised else None)
+                loss, constraints_loss, dual_gap = self.dual_model.loss(outputs_list, self.args.r_min, num_graphs*num_samplers, constraint_eps=0.0, metric=self.args.metric,
+                                                            resilient_weight_decay=self.args.dual_resilient_decay, 
+                                                            dual_training_loss=self.args.dual_training_loss,
+                                                            rates_prop_grads=self.args.rates_prop_grads,
+                                                            supervised=self.args.supervised, target=data.target if self.args.supervised else None)
                 L = loss + torch.sum(training_multipliers * constraints_loss)
 
                 self.dual_optimizer.zero_grad()
+                torch.autograd.set_detect_anomaly(True)
                 L.backward()                        # Minimize the loss
                 self.dual_optimizer.step()
+
 
                 # update the training multipliers with resilience
                 if self.args.training_resilient_decay > 0:
@@ -316,6 +335,7 @@ class Trainer():
                 self.dual_trained = True
 
                 if self.args.use_wandb:
+                    wandb.log({'dual/dual pure loss': loss})
                     wandb.log({'dual/dualality gap': dual_gap})
                     wandb.log({'dual/dual training loss': L.item()})
                     wandb.log({'dual/constraint loss': torch.mean(constraints_loss.detach().cpu()).item()})
@@ -326,36 +346,92 @@ class Trainer():
         
         return np.stack(loss_list).mean(), training_multipliers if multiplier_update else None
 
-    # def validate(self, epoch, loader, mode='primal'):
-    #     assert self.primal_model is not None, 'Primal model is not defined'
-    #     assert self.dual_model is not None, 'Dual model is not defined'
-    #     assert self.device is not None, 'Device is not defined'
-    #     assert self.args is not None, 'Args are not defined'
+    def validate(self, loader):
+        assert self.primal_model is not None, 'Primal model is not defined'
+        assert self.dual_model is not None, 'Dual model is not defined'
+        assert self.device is not None, 'Device is not defined'
+        assert self.args is not None, 'Args are not defined'
+
+        L = []
         
-    #     for data, batch_idx in loader:
-    #         self.primal_model.zero_grad()
-    #         data = data.to(self.device)
-    #         y, edge_index_l, edge_weight_l, _, \
-    #         _, _, a_l, transmitters_index, num_graphs = \
-    #             data.y, data.edge_index_l, data.edge_weight_l, data.edge_index, data.edge_weight, \
-    #             data.weighted_adjacency, data.weighted_adjacency_l, \
-    #             data.transmitters_index, data.num_graphs
+        for data, batch_idx in loader:
+            self.primal_model.zero_grad()
+            data = data.to(self.device)
+            y, edge_index_l, edge_weight_l, _, \
+            _, _, a_l, transmitters_index, num_graphs = \
+                data.y, data.edge_index_l, data.edge_weight_l, data.edge_index, data.edge_weight, \
+                data.weighted_adjacency, data.weighted_adjacency_l, \
+                data.transmitters_index, data.num_graphs
+            
+            edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
+                                                                    num_nodes=self.args.n, method="threshold", eps=2e-2)
+            
+            self.dual_model.eval()
+            self.primal_model.eval()
+            
+            # Forward pass
+            outputs_list = self.unroll_DA(edge_index_l=edge_index_l, edge_weight_l=edge_weight_l, a_l=a_l, transmitters_index=transmitters_index, num_graphs=num_graphs)
+            
+            # calculate the loss
+            loss, constraints_loss, dual_gap = self.dual_model.loss(outputs_list, self.args.r_min, num_graphs, constraint_eps=0.0, metric=self.args.metric,
+                                                        resilient_weight_decay=self.args.dual_resilient_decay, 
+                                                        dual_training_loss="complementary_slackness",
+                                                        rates_prop_grads=self.args.rates_prop_grads,
+                                                        supervised=self.args.supervised, target=data.target if self.args.supervised else None)
+            
+            L.append(loss + 0.5*torch.maximum(constraints_loss, 
+                                           torch.zeros_like(constraints_loss)).sum() + dual_gap.abs())
+            
+        return torch.stack(L).mean().item()
             
 
-    #         if mode == 'primal':
-    #             # Forward pass and Losses
-    #             p = self.primal_model(mu, edge_index_l, edge_weight_l, transmitters_index)    # MU is normalized to [0, 1]
-    #             gamma = torch.ones(num_graphs * self.args.n, 1).to(self.device) 
-    #             # if p is not a list
-    #             if not isinstance(p, list):
-    #                 rates = calc_rates(p, gamma, a_l[:, :, :], self.noise_var, self.args.ss_param)
-    #             else:
-    #                 rates = []
-    #                 for i in range(len(p)):
-    #                     rates.append(calc_rates(p[i], gamma, a_l[:, :, :], self.noise_var, self.args.ss_param))
 
-    #             loss, constraints_loss = self.primal_model.loss(rates, mu, p, constraint_eps=0.0, metric=self.args.metric, constrained_subnetwork=None)
 
+
+
+    # def compute_output_jacobian_per_param(self, model, data):
+    #     """
+    #     Compute the Jacobian efficiently by parameter swapping during unroll_DA.
+    #     """
+    #     jacobian_dict = {}
+        
+    #     # Process each parameter individually
+    #     for name, param in model.named_parameters():
+    #         if not param.requires_grad:
+    #             continue
+                
+    #         print(f"Computing Jacobian for parameter: {name}")
+            
+    #         # Store original parameter data
+    #         original_data = param.data.clone()
+            
+    #         # Create a function that returns output with respect to this parameter
+    #         def output_fn(param_value):
+    #             # Temporarily replace parameter value
+    #             param.data = param_value.data
+                
+    #             # Run the model's forward pass
+    #             outputs_list = self.unroll_DA(data=data)
+    #             output = outputs_list[-1][0]  # Get mu from last step
+                
+    #             # Take mean or sample to reduce dimension
+    #             return torch.mean(output, dim=0)
+            
+    #         # Compute Jacobian for this parameter
+    #         try:
+    #             jacobian = jacrev(output_fn)(param)
+    #             jacobian_dict[name] = jacobian
+                
+    #             # Free memory
+    #             del jacobian
+    #             torch.cuda.empty_cache()
+    #         except Exception as e:
+    #             print(f"Error computing Jacobian for {name}: {str(e)}")
+    #             # Make sure parameter is restored even after error
+    #             param.data = original_data
+        
+    #     return jacobian_dict
+    
 
 
 

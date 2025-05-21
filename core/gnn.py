@@ -60,6 +60,8 @@ class res_gnn_backbone(torch.nn.Module):
         norm = kwargs.get('norm_layer', 'batch')
         global_pooling = kwargs.get('global_pooling', None)
 
+        norm_layer_mode = kwargs.get('norm_layer_mode', 'node')
+
         # Define activation functions
         if activation == 'leaky_relu':
             self.activation = F.leaky_relu
@@ -94,7 +96,8 @@ class res_gnn_backbone(torch.nn.Module):
             # self.conv_layers.append(conv_layer)
 
             norm_layer = NormLayer(norm=norm,
-                                   in_channels=num_features_list[i+1] if self.layer_ord.index('norm') > self.layer_ord.index('conv') else num_features_list[i])
+                                   in_channels=num_features_list[i+1] if self.layer_ord.index('norm') > self.layer_ord.index('conv') else num_features_list[i],
+                                   norm_layer_mode=norm_layer_mode)
             # self.norm_layers.append(norm_layer)
 
             # If the number of input channels is not equal to the number of output channels we have to project the shortcut connection

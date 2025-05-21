@@ -66,7 +66,6 @@ def plot_testing(test_results, f_min, P_max, num_curves=15, num_agents=100, num_
     ax.set_xlabel('iterations')
     ax.set_ylabel('Lagrangian')
     fig.tight_layout()
-    print(pathname)
     fig.savefig(f'{pathname}SA_L_over_time.png')
 
 
@@ -164,8 +163,8 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
             fig, ax = plt.subplots(2, 3, figsize=(12, 6))
             multipliers = np.stack(all_epoch_results[mode, 'test_mu_over_time'])
             for i in range(num_curves):
-                ax[0,0].plot(multipliers[-1,0,:,i+graph*num_agents]/15, label='agent {}'.format(i), color=colors_idx[i])
-                ax[1,0].plot(multipliers[-1,1,:,i+graph*num_agents]/15, label='agent {}'.format(i), color=colors_idx[i])
+                ax[0,0].plot(multipliers[-1,0,:,i+graph*num_agents], label='agent {}'.format(i), color=colors_idx[i])
+                ax[1,0].plot(multipliers[-1,1,:,i+graph*num_agents], label='agent {}'.format(i), color=colors_idx[i])
             ax[0,0].set_xlabel('iterations')
             ax[1,0].set_xlabel('iterations')
             ax[0,0].set_title('Dual variables')
@@ -247,7 +246,6 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
     ax.set_xlabel('iterations')
     ax.set_ylabel('Lagrangian')
     fig.tight_layout()
-    print(pathname)
     fig.savefig(f'{pathname}SA_L_over_time.png')
 
     
@@ -258,7 +256,6 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
     ax.set_xlabel('iterations')
     ax.set_ylabel('Dual function')
     fig.tight_layout()
-    print(pathname)
     fig.savefig(f'{pathname}dual_fn.png')
 
 
