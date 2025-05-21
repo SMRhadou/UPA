@@ -21,7 +21,9 @@ class NormLayer(nn.Module):
         self.norm = norm
         self.in_channels = in_channels
         self.n_groups = kwargs.get('n_groups', 8)
+        self.norm_layer_mode = kwargs.get('norm_layer_mode', 'node')
         self.resolve_norm_layer(norm = self.norm, in_channels=in_channels, **kwargs)
+        
 
 
     def resolve_norm_layer(self, norm, in_channels, **kwargs):
@@ -30,7 +32,7 @@ class NormLayer(nn.Module):
         if norm == 'batch':
             self.norm_layer = BatchNorm(in_channels)
         elif norm == 'layer':
-            self.norm_layer = LayerNorm(in_channels, mode = 'node')
+            self.norm_layer = LayerNorm(in_channels, mode = self.norm_layer_mode)
         elif norm == 'group':
             self.norm_layer = DiffGroupNorm(in_channels=in_channels, groups=n_groups)
         elif norm == 'graph':
@@ -128,6 +130,7 @@ class ResidualLayer(nn.Module):
         res_connection: str = 'res+',
         dropout: float = 0.,
         use_checkpointing: bool = False,
+        norm_layer_norm: str = 'node',
     ):
         super().__init__()
 
@@ -138,6 +141,7 @@ class ResidualLayer(nn.Module):
         self.conv_architecture = conv_architecture
         assert self.conv_architecture in ['LeConv', 'TAGConv', 'GCN']
         self.norm = norm
+        self.norm_layer_mode = norm_layer_norm
         assert self.norm in ['batch', 'group', 'graph', 'layer', 'none']
         self.act = act
         self.res_connection = res_connection.lower()
@@ -154,7 +158,7 @@ class ResidualLayer(nn.Module):
                               )
             
         self.mlp = nn.Identity() if self.mlp is None else self.mlp
-        self.norm = NormLayer(norm=norm, in_channels=in_channels)
+        self.norm = NormLayer(norm=norm, in_channels=in_channels, norm_layer_mode=self.norm_layer_norm)
 
         if self.in_channels != self.out_channels:
             self.res = nn.Linear(self.in_channels, self.out_channels, bias=False)
@@ -255,6 +259,7 @@ class ResidualGNN(nn.Module):
         self.activation = nn.LeakyReLU()
         self.norm = norm
         conv_architecture = "TAGConv"
+        norm_layer_mode = kwargs.get('norm_layer_mode', 'node')
         self.time_embed = SinusoidalTimeEmbedding(n_channels=hidden_channels // 4)
         self.x_embed = nn.Linear(in_channels, hidden_channels // 4)
 
@@ -270,7 +275,8 @@ class ResidualGNN(nn.Module):
                                                   mlp=pyg_mlp(channel_list = [hidden_channels, 4 * hidden_channels, hidden_channels], act = self.activation),
                                                   res_connection=self.res_connection,
                                                   dropout=0.0,
-                                                  use_checkpointing=self.use_checkpointing
+                                                  use_checkpointing=self.use_checkpointing,
+                                                    norm_layer_mode=norm_layer_mode
                                                   )
                                     )
         
@@ -292,7 +298,8 @@ class ResidualGNN(nn.Module):
                                            mlp=pyg_mlp(channel_list = [hidden_channels, 4 * hidden_channels, hidden_channels], act = self.activation),
                                            res_connection=self.res_connection,
                                            dropout=0.0,
-                                           use_checkpointing=self.use_checkpointing
+                                           use_checkpointing=self.use_checkpointing,
+                                           norm_layer_norm=norm_layer_mode
                                            ) 
 
             self.res_conv_layers.append(res_conv_layer)
