@@ -187,7 +187,7 @@ class DualModel(nn.Module):
         self.n = args.n
         self.P_max = args.P_max
         self.constrained_subnetwork = args.constrained_subnetwork
-        self.resilient_weight_deacay = getattr(args, 'resilient_weight_decay', 0.0)
+        # self.resilient_weight_deacay = resilient_weight_deacay #getattr(args, 'resilient_weight_decay', 0.0)
         self.normalized_mu = 1 #args.mu_max if args.normalize_mu else 1
         self.dual_num_blocks = args.dual_num_blocks if hasattr(args, 'dual_num_blocks') else args.num_blocks
         self.mu_uncons = args.mu_uncons
@@ -247,7 +247,7 @@ class DualModel(nn.Module):
                 if dual_training_loss == 'lagrangian':
                     L = -1 * lagrangian_fn(rates, mu, self.cons_lvl, p=p, metric=metric, constrained_subnetwork=constrained_subnetwork)
                 elif dual_training_loss == 'complementary_slackness':
-                    L = -1 * complementary_slackness(rates, mu, self.cons_lvl, rates_prop_grads=False, constrained_subnetwork=constrained_subnetwork)
+                    L = -1 * complementary_slackness(rates, mu, self.cons_lvl, rates_prop_grads=rates_prop_grads, constrained_subnetwork=constrained_subnetwork)
                 else:
                     raise ValueError(f"Unknown dual training loss: {dual_training_loss}")
                 
@@ -267,7 +267,7 @@ class DualModel(nn.Module):
         if self.duality_gap:
             L += torch.abs(dual_gap)
 
-        # constraine loss
+        # descent constrainet evaluation
         if constraint_eps is not None:
             constraint_loss = self.descending_constraints(torch.stack(violation_list), constraint_eps)
             return L.mean(), constraint_loss.unsqueeze(1), dual_gap

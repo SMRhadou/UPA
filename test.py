@@ -49,8 +49,8 @@ def main(experiment_path, mu_uncons=0.0, best = True):
         args = json.load(f)
     args = SimpleNamespace(**args)
     fix_mu_uncons = True
-    args.lr_DA_dual = 0.05                   #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    args.dual_resilient_decay = 0.0       #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    # args.lr_DA_dual = 0.05                   #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    # args.dual_resilient_decay = 0.0       #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     args.use_wandb = False
     args.adjust_constraints = False
     # args.mu_uncons = mu_uncons
@@ -78,7 +78,7 @@ def main(experiment_path, mu_uncons=0.0, best = True):
     del data_list
 
     # load model from checkpoint
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     primal_model = PrimalModel(args, device, unrolled=args.unrolled_primal)
     dual_model = DualModel(args, device)
     if args.training_modes[0] == 'dual':

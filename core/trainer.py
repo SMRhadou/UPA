@@ -308,11 +308,12 @@ class Trainer():
                     
 
                 # calculate the loss
-                loss, constraints_loss, dual_gap = self.dual_model.loss(outputs_list, self.args.r_min, num_graphs*num_samplers, constraint_eps=0.0, metric=self.args.metric,
-                                                            resilient_weight_decay=self.args.dual_resilient_decay, 
-                                                            dual_training_loss=self.args.dual_training_loss,
-                                                            rates_prop_grads=self.args.rates_prop_grads,
-                                                            supervised=self.args.supervised, target=data.target if self.args.supervised else None)
+                loss, constraints_loss, dual_gap = self.dual_model.loss(outputs_list, self.args.r_min, num_graphs*num_samplers, 
+                                                                        constraint_eps=self.args.dual_constraint_eps, metric=self.args.metric,
+                                                                        resilient_weight_decay=100, #self.args.dual_resilient_decay, #Add regularization to the multipliers
+                                                                        dual_training_loss=self.args.dual_training_loss,
+                                                                        rates_prop_grads=self.args.rates_prop_grads,
+                                                                        supervised=self.args.supervised, target=data.target if self.args.supervised else None)
                 L = loss + torch.sum(training_multipliers * constraints_loss)
 
                 self.dual_optimizer.zero_grad()
@@ -331,7 +332,6 @@ class Trainer():
                 training_multipliers = torch.maximum(training_multipliers, torch.zeros_like(training_multipliers))
 
                 loss_list.append((loss + torch.maximum(constraints_loss, torch.zeros_like(constraints_loss)).sum()).item())
-                # loss_list.append(loss.item())
                 self.dual_trained = True
 
                 if self.args.use_wandb:
@@ -383,56 +383,6 @@ class Trainer():
                                            torch.zeros_like(constraints_loss)).sum() + dual_gap.abs())
             
         return torch.stack(L).mean().item()
-            
-
-
-
-
-
-    # def compute_output_jacobian_per_param(self, model, data):
-    #     """
-    #     Compute the Jacobian efficiently by parameter swapping during unroll_DA.
-    #     """
-    #     jacobian_dict = {}
-        
-    #     # Process each parameter individually
-    #     for name, param in model.named_parameters():
-    #         if not param.requires_grad:
-    #             continue
-                
-    #         print(f"Computing Jacobian for parameter: {name}")
-            
-    #         # Store original parameter data
-    #         original_data = param.data.clone()
-            
-    #         # Create a function that returns output with respect to this parameter
-    #         def output_fn(param_value):
-    #             # Temporarily replace parameter value
-    #             param.data = param_value.data
-                
-    #             # Run the model's forward pass
-    #             outputs_list = self.unroll_DA(data=data)
-    #             output = outputs_list[-1][0]  # Get mu from last step
-                
-    #             # Take mean or sample to reduce dimension
-    #             return torch.mean(output, dim=0)
-            
-    #         # Compute Jacobian for this parameter
-    #         try:
-    #             jacobian = jacrev(output_fn)(param)
-    #             jacobian_dict[name] = jacobian
-                
-    #             # Free memory
-    #             del jacobian
-    #             torch.cuda.empty_cache()
-    #         except Exception as e:
-    #             print(f"Error computing Jacobian for {name}: {str(e)}")
-    #             # Make sure parameter is restored even after error
-    #             param.data = original_data
-        
-    #     return jacobian_dict
-    
-
 
 
     def eval_primal(self, loader, num_iters=None, **kwargs):

@@ -54,16 +54,16 @@ def make_parser():
     parser.add_argument('--supervised', action='store_true', default=False, help='Supervised training')
     parser.add_argument('--duality_gap', action='store_true', default=False, help='Add duality gap to training objective')
     parser.add_argument('--noisy_training', action='store_true', default=True, help='Add noise to the layers outputs during raining')
-    parser.add_argument('--dual_training_loss', type=str, default='complementary_slackness', choices=['lagrangian', 'complementary_slackness'], help='Loss function for dual training')
+    parser.add_argument('--dual_training_loss', type=str, default='lagrangian', choices=['lagrangian', 'complementary_slackness'], help='Loss function for dual training')
     parser.add_argument("--rates_prop_grads", action="store_true", default=False, help="Propagate gradients through the rate calculation")
     parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
     parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size/No. of graphs in a batch')
     parser.add_argument('--num_samplers', type=int, default=128, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=1, help='Number of training epochs')
-    parser.add_argument('--num_epochs_dual', type=int, default=1, help='Number of training epochs')
+    parser.add_argument('--num_epochs_dual', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
-    parser.add_argument('--num_cycles', type=int, default=1000, help='Number of training cycles')
+    parser.add_argument('--num_cycles', type=int, default=2000, help='Number of training cycles')
     parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training (e.g., cuda:0, cpu)')
 
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
@@ -71,6 +71,7 @@ def make_parser():
 
     parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-6, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
+    parser.add_argument('--dual_constraint_eps', type=float, default=0.0, help='constraint parameter in the ascent constraints associated with training the dual network')
 
     parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
     parser.add_argument('--lr_DA_dual', type=float, default=0.05, help='Learning rate for dual variables in the DA algorithm')
@@ -122,9 +123,6 @@ def make_parser():
 
 
 def main(args):
-    # assert args.evaluation_interval <= args.num_epochs_primal, 'Evaluation interval must be less than the number of epochs for primal model'
-    # assert args.evaluation_interval <= args.num_epochs_dual, 'Evaluation interval must be less than the number of epochs for dual model'
-
     num_samples = {'train': args.num_samples_train, 'valid': args.num_samples_test, 'test': args.num_samples_test}
     N = -174 - 30 + 10 * np.log10(args.BW)
     args.noise_var = np.power(10, N / 10)
@@ -265,7 +263,6 @@ def main(args):
     ############################# start training and evaluation #############################
     os.environ['CUDA_LAUNCH_BLOCKING']="1"
     os.environ['TORCH_USE_CUDA_DSA'] = "1"
-    dual_resilient_decay = args.dual_resilient_decay
     all_epoch_results = defaultdict(list)
     best_loss = np.inf # {mode: np.inf for mode in args.training_modes}
 
@@ -277,8 +274,7 @@ def main(args):
     print('Starting the training and evaluation process ...')
     for cycle in tqdm(range(args.num_cycles)):
         for mode in args.training_modes:
-            args.dual_resilient_decay = dual_resilient_decay if mode == 'dual' else 0.0
-            if mode == 'primal' and (cycle % 20 !=0 or cycle == 0):
+            if mode == 'primal' and (cycle % num_epochs['dual'] !=0 or cycle == 0):
                 continue
             # if args.supervised and mode == 'dual':
             #     del loader
@@ -395,18 +391,6 @@ def main(args):
                     }
         torch.save(checkpoint, './results/{}/dual_model.pt'.format(experiment_name))
 
-    # fig = plt.figure(figsize=(4, 5))
-    # plt.plot(np.stack(L_test, axis=1)[:10].T)
-    # plt.xlabel('epochs')
-    # plt.ylabel('Lagrangian')
-    # fig.savefig('./results/{}/figs/L_test.png'.format(experiment_name))
-
-
-    # # Plotting results
-    # plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, unrolling_iters=args.dual_num_blocks+1, pathname='./results/{}/figs'.format(experiment_name))
-    # plot_final_percentiles_comparison(all_epoch_results, f_min=args.r_min, pathname='./results/{}/figs'.format(experiment_name))
-    # if args.constrained_subnetwork < 1:
-    #     plot_subnetworks(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)) , args.P_max, args.n, pathname='{}/figs/{}_'.format(experiment_path, args.mu_uncons))
 
     print('Training complete!')
     
