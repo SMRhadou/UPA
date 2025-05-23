@@ -238,7 +238,8 @@ class Trainer():
                     for i in range(len(p)):
                         rates.append(calc_rates(p[i], gamma, a_l[:, :, :], self.noise_var, self.args.ss_param))
 
-                loss, constraints_loss = self.primal_model.loss(rates, mu, p, constraint_eps=0.0, metric=self.args.metric, constrained_subnetwork=None)
+                loss, constraints_loss = self.primal_model.loss(rates, mu, p, constraint_eps=self.args.primal_constraint_eps, 
+                                                                metric=self.args.metric, constrained_subnetwork=None)
                 L = loss + torch.sum(training_multipliers * constraints_loss)
 
                 # primal update

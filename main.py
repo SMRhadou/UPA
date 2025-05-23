@@ -61,17 +61,18 @@ def make_parser():
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size/No. of graphs in a batch')
     parser.add_argument('--num_samplers', type=int, default=128, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=1, help='Number of training epochs')
-    parser.add_argument('--num_epochs_dual', type=int, default=50, help='Number of training epochs')
+    parser.add_argument('--num_epochs_dual', type=int, default=25, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=2000, help='Number of training cycles')
-    parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training (e.g., cuda:0, cpu)')
+    parser.add_argument('--device', type=str, default='cuda:1', help='Device to use for training (e.g., cuda:0, cpu)')
 
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_primal_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers in trainnig primal model')
+    parser.add_argument('--primal_constraint_eps', type=float, default=0.0, help='constraint parameter in the descent constraints associated with training the primal network')
 
     parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
-    parser.add_argument('--lr_dual_multiplier', type=float, default=1e-6, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
-    parser.add_argument('--dual_constraint_eps', type=float, default=0.0, help='constraint parameter in the ascent constraints associated with training the dual network')
+    parser.add_argument('--lr_dual_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
+    parser.add_argument('--dual_constraint_eps', type=float, default=0.2, help='constraint parameter in the ascent constraints associated with training the dual network')
 
     parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
     parser.add_argument('--lr_DA_dual', type=float, default=0.05, help='Learning rate for dual variables in the DA algorithm')
@@ -300,7 +301,7 @@ def main(args):
             #         for phase in data_list:
             #             loader[mode][phase] = DataLoader(WirelessDataset(data_list[phase][:max_num_samples[mode]]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
 
-            for epoch in tqdm(range(num_epochs[mode])):
+            for epoch in tqdm(range(1)):
                 for phase in loader[mode]:
                     if phase == 'train':
                         _, multipliers = trainer.train(epoch, loader[mode][phase], training_multipliers[mode], mode=mode)

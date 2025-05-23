@@ -82,18 +82,22 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
     colors = {'SA': 'darkorange', 'unrolling': 'green'}
     alpha = 0.5  # Transparency level
 
+    # Define fixed bins for consistent comparison
+    power_bins = np.linspace(0, 1, 50)  # From 0 to 1 for normalized power
+    rate_bins = np.linspace(0, 12, 50)   # Adjust range based on your typical rate values
+
     for i, mode in enumerate(modes_list):
         power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])[-1,:,-1].reshape(-1, n)
         rates = np.stack(all_epoch_results[mode, 'all_rates'])[-1,:,-1].reshape(-1, n)
         
         # Create histograms with transparent colors
-        ax[0,0].hist((power_allocated[:,:constrained_agents]/P_max).reshape(-1,1), bins=20, 
+        ax[0,0].hist((power_allocated[:,:constrained_agents]/P_max).reshape(-1,1), bins=power_bins, 
                      alpha=alpha, color=colors[mode], label=plot_labels[mode])
-        ax[0,1].hist(rates[:,:constrained_agents].reshape(-1,1), bins=20, 
+        ax[0,1].hist(rates[:,:constrained_agents].reshape(-1,1), bins=rate_bins, 
                      alpha=alpha, color=colors[mode], label=plot_labels[mode])
-        ax[1,0].hist((power_allocated[:,constrained_agents:]/P_max).reshape(-1,1), bins=20, 
+        ax[1,0].hist((power_allocated[:,constrained_agents:]/P_max).reshape(-1,1), bins=power_bins, 
                      alpha=alpha, color=colors[mode], label=plot_labels[mode])
-        ax[1,1].hist(rates[:,constrained_agents:].reshape(-1,1), bins=20, 
+        ax[1,1].hist(rates[:,constrained_agents:].reshape(-1,1), bins=rate_bins, 
                      alpha=alpha, color=colors[mode], label=plot_labels[mode])
     
     # Add labels and titles
