@@ -48,6 +48,8 @@ def make_parser():
     parser.add_argument('--metric', type=str, default='rates', choices=['rates', 'power'], help='Metric for rate calculation')
     parser.add_argument('--constrained_subnetwork', type=float, default=0.5, help='impose constraints on part of the agents, 1 <==> full network')
     parser.add_argument('--graph_type', type=str, default='regular', choices=['CR', 'regular'], help='Type of graph to generate')
+    parser.add_argument('--sparse_graph_thresh', type=float, default=6e-2, help='Threshold for sparse graph generation')
+    parser.add_argument('--TxLoc_perturbation_ratio', type=float, default=20, help='Perturbation ratio for transmitter locations')
 
     # training parameters
     parser.add_argument('--training_modes', type=list, default=['primal', 'dual'], help='Training modes for the model')
@@ -56,22 +58,22 @@ def make_parser():
     parser.add_argument('--noisy_training', action='store_true', default=True, help='Add noise to the layers outputs during raining')
     parser.add_argument('--dual_training_loss', type=str, default='lagrangian', choices=['lagrangian', 'complementary_slackness'], help='Loss function for dual training')
     parser.add_argument("--rates_prop_grads", action="store_true", default=False, help="Propagate gradients through the rate calculation")
-    parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
-    parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
+    parser.add_argument('--num_samples_train', type=int, default=1, help='Number of training samples')
+    parser.add_argument('--num_samples_test', type=int, default=1, help='Number of test samples')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size/No. of graphs in a batch')
     parser.add_argument('--num_samplers', type=int, default=128, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=1, help='Number of training epochs')
     parser.add_argument('--num_epochs_dual', type=int, default=25, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=2000, help='Number of training cycles')
-    parser.add_argument('--device', type=str, default='cuda:1', help='Device to use for training (e.g., cuda:0, cpu)')
+    parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training (e.g., cuda:0, cpu)')
 
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_primal_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers in trainnig primal model')
     parser.add_argument('--primal_constraint_eps', type=float, default=0.0, help='constraint parameter in the descent constraints associated with training the primal network')
 
     parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
-    parser.add_argument('--lr_dual_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
+    parser.add_argument('--lr_dual_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
     parser.add_argument('--dual_constraint_eps', type=float, default=0.2, help='constraint parameter in the ascent constraints associated with training the dual network')
 
     parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')
@@ -168,7 +170,8 @@ def main(args):
     # create PyTorch Geometric datasets and dataloaders
     print('Generating the training and evaluation data ...')
     path = './data/{}_{}_train_{}'.format(experiment_name, max_D_TxRx, args.num_samples_train)   
-    data_list = create_data(args.m, args.n, args.T, R, path, num_samples, args.P_max, args.noise_var, args.graph_type)
+    data_list = create_data(args.m, args.n, args.T, R, path, num_samples, args.P_max, args.noise_var, args.graph_type, 
+                            args.sparse_graph_thresh, args.TxLoc_perturbation_ratio)
     
     
     loader = {}
@@ -277,30 +280,6 @@ def main(args):
         for mode in args.training_modes:
             if mode == 'primal' and (cycle % num_epochs['dual'] !=0 or cycle == 0):
                 continue
-            # if args.supervised and mode == 'dual':
-            #     del loader
-            #     if os.path.exists('{}_target.json'.format(path)):
-            #         data_list_supervised = torch.load('{}_target.json'.format(path), map_location='cpu')
-            #     else: 
-            #         data_list_supervised = defaultdict(list)
-            #         for phase in batch_size.keys():
-            #             for data in tqdm(data_list[phase]):
-            #                 data = data.to(device)
-            #                 target = dual_model.DA(primal_model, data, 0.1, 100, #args.dual_resilient_decay, 
-            #                                         args.n, args.r_min, args.noise_var, 200, args.ss_param,
-            #                                         args.mu_init, args.mu_uncons, device, adjust_constraints=False)
-                            
-            #                 data.target = torch.stack(target[0])[-1].unsqueeze(1)       # Mu*
-            #                 data_list_supervised[phase].append(data)
-            #         path = '{}_target.json'.format(path)
-            #         torch.save(data_list_supervised, path)
-
-            #     for phase in data_list_supervised:
-            #         loader[mode] = {}
-            #         batch_size = {'train': args.batch_size if mode=='dual' else 1, 'valid': args.batch_size, 'test': args.batch_size}
-            #         for phase in data_list:
-            #             loader[mode][phase] = DataLoader(WirelessDataset(data_list[phase][:max_num_samples[mode]]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
-
             for epoch in tqdm(range(1)):
                 for phase in loader[mode]:
                     if phase == 'train':

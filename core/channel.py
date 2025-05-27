@@ -52,7 +52,7 @@ def short_term_fading(T, N, f_c, speed):
     
     return h
 
-def create_channel_matrix_over_time(m, n, T, R, graph_type='CR'):
+def create_channel_matrix_over_time(m, n, T, R, graph_type='CR', perturbation_ratio=20):
     # # (Navid implementation) specify transmitter locations
     # while True:
     #     locTx = np.random.uniform(0, R, (m, 2)) - R / 2
@@ -81,7 +81,7 @@ def create_channel_matrix_over_time(m, n, T, R, graph_type='CR'):
     if graph_type == 'CR':
         locTx, locRx = drop_links(m, min_D_TxRx, max_D_TxRx, R, min_D_TxTx)
     elif graph_type == 'regular':
-        locTx, locRx = create_grid_channel_matrix(m, n, R)
+        locTx, locRx = create_grid_channel_matrix(m, n, R, perturbation_ratio=perturbation_ratio)
     
     
     D_TxTx = distance.cdist(locTx, locTx, 'euclidean')
@@ -103,22 +103,7 @@ def create_channel_matrix_over_time(m, n, T, R, graph_type='CR'):
     return np.abs(H) ** 2, np.abs(H_l) ** 2
 
 
-def create_grid_channel_matrix(m, n, grid_size=10, connection_radius=None):
-    """
-    Creates a grid-based channel matrix where transmitters and receivers are placed
-    at the center of grid cells and connected based on distance.
-    
-    Args:
-        m: Number of transmitters
-        n: Number of receivers (should equal m for a grid layout)
-        grid_size: Size of the grid (grid_size x grid_size)
-        connection_radius: Radius for connecting points. If None, it will be 
-                           calculated to achieve approximately 4 neighbors per node
-    
-    Returns:
-        h_l: Channel gain matrix as torch tensor (m x n)
-        positions: Dictionary of node positions {node_id: (x,y)}
-    """
+def create_grid_channel_matrix(m, n, grid_size=10, perturbation_ratio=20):
     # if n != grid_size**2:
     #     print(f"Warning: Number of receivers ({n}) doesn't match grid size ({grid_size}x{grid_size}={grid_size**2})")
     R = grid_size//np.sqrt(m)
@@ -137,7 +122,7 @@ def create_grid_channel_matrix(m, n, grid_size=10, connection_radius=None):
     locTx = np.stack(points)
     # permute the transmitters
     locTx = np.random.permutation(locTx)  
-    locTx += np.random.uniform(-R/20, R/20, locTx.shape)  # Add some noise to Tx locations
+    locTx += np.random.uniform(-R/perturbation_ratio, R/perturbation_ratio, locTx.shape)  # Add some noise to Tx locations
 
     # drop Rx within min_D_TxRx from each Tx
     locRx = np.zeros((m, 2))
@@ -187,4 +172,4 @@ def create_grid_channel_matrix(m, n, grid_size=10, connection_radius=None):
     # avg_degree = sum(dict(G.degree()).values()) / len(G.nodes())
     # print(f"Average node degree: {avg_degree:.2f}")
     
-    return locTx, locRx#h_l, h_l, positions, G
+    return locTx, locRx

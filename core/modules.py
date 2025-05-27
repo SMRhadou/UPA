@@ -292,8 +292,8 @@ class DualModel(nn.Module):
             data.edge_index_l, data.edge_weight_l, data.weighted_adjacency_l, \
             data.transmitters_index, getattr(data, 'num_graphs', 1)
         
-        edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
-                                                                    num_nodes=n, method="threshold", eps=2e-2)
+        # edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
+        #                                                             num_nodes=n, method="threshold", eps=2e-2)
         
         if num_samplers > 1 and num_graphs == 1:
             edge_index_expanded = []

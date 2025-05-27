@@ -28,20 +28,7 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
-def main(experiment_path, mu_uncons=0.0, best = True):
-    # experiment_path = './results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_10.0_depth_3_MUmax_10.0_rMin_1.5_lr_0.0001/'.format(R)
-    # experiment_path += 'f9466ebe' if R == 2500 else 'c8e72391' # 1000 or 2000
-    # # c820fc50 (2), 7841d161 (3)
-    # experiment_path = 'results/subnetwork_m_100_R_{}_Pmax_0_ss_1.0_resilience_10.0_depth_3_MUmax_60.0_rMin_1.5_lr_0.0001/'.format(R)
-    # experiment_path += 'd9ab5a6c'
-    # experiment_path = 'results/subnetwork_m_100_R_3000_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_20.0_rMin_2.0_lr_1e-07/'
-    # experiment_path += '82c810ec'
-    # experiment_path = "./results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_2.25_lr_1e-08/"
-    # experiment_path += '0e3c6b25'
-    # experiment_path ='results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_20.0_rMin_2.25_lr_1e-08/'
-    # experiment_path += '410a8c19'
-    # experiment_path ='results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_20.0_rMin_2.25_lr_1e-08/'
-    # experiment_path += 'acfba004'
+def main(experiment_path, best = True, perturbation_ratio=None):
 
     all_epoch_results = defaultdict(list)
     # read args file as adictionary
@@ -49,74 +36,49 @@ def main(experiment_path, mu_uncons=0.0, best = True):
         args = json.load(f)
     args = SimpleNamespace(**args)
     fix_mu_uncons = True
-    # args.lr_DA_dual = 0.05                   #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    # args.dual_resilient_decay = 0.0       #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     args.use_wandb = False
     args.adjust_constraints = False
-    # args.mu_uncons = mu_uncons
-    # args.mu_init = 10
- 
-    # args.unrolled_primal = False
-    # args.normalize_mu = False
-    # args.constrained_subnetwork = 0.5
-    # args.normalize_mu = getattr(args, 'normalize_mu', False)
-    # args.mu_nan = 500
-    # args.r_min = 1.5
-    # args.primal_hidden_size = 256
-    # args.primal_num_sublayers = 3
-    # args.primal_k_hops = 2
-    # args.dual_hidden_size = 256
-    # args.dual_num_sublayers = 3
-    # args.dual_k_hops = 2
+    args.sparse_graph_thresh = getattr(args, 'sparse_graph_thresh', 6e-2)
 
     # load data
     # data_path = './data/m_100_R_2500_Pmax_0_60.json'
-    data_path = './data/{}_{}_{}_train_{}.json'.format(experiment_path.split('/')[-2][:30], args.graph_type, max_D_TxRx, args.num_samples_train)
-    print(data_path)
-    data_list = torch.load(data_path, map_location='cpu')
-    loader = DataLoader(WirelessDataset(data_list['test']), batch_size=32, shuffle=False)
-    del data_list
+    if perturbation_ratio is None:
+        variable = 0.0
+        data_path = './data/{}_{}_{}_train_{}.json'.format(experiment_path.split('/')[-2][:30], args.graph_type, max_D_TxRx, args.num_samples_train)
+        data_list = torch.load(data_path, map_location='cpu')
+        loader = DataLoader(WirelessDataset(data_list['test']), batch_size=32, shuffle=False)
+        del data_list
+    else:
+        variable = perturbation_ratio
+        num_samples = {'test': args.num_samples_test}
+        data_path = './data/{}_{}_{}_perturbation_ratio_{}.json'.format(experiment_path.split('/')[-2][:30], args.graph_type, max_D_TxRx, perturbation_ratio)
+        data_list = create_data(args.m, args.n, args.T, args.R, data_path, num_samples, args.P_max, args.noise_var, args.graph_type, 
+                                args.sparse_graph_thresh, perturbation_ratio)
+        loader = DataLoader(WirelessDataset(data_list['test']), batch_size=32, shuffle=False)
+        del data_list
 
     # load model from checkpoint
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     primal_model = PrimalModel(args, device, unrolled=args.unrolled_primal)
     dual_model = DualModel(args, device)
-    if args.training_modes[0] == 'dual':
-        if args.unrolled_primal:
-            primal_experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/842c4d5c' 
-        else:
-            if args.normalize_mu:
-                primal_experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/bb3c2c94' #7fe6ab7b
-            else:
-                primal_experiment_path = './results/m_100_R_2500_Pmax_0_ss_1.0_resilience_100.0_depth_3_MUmax_2.0_rMin_2.0_lr_1e-06/7fe6ab7b' #7fe6ab7b
-        # primal_experiment_path = './results/subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_10.0_rMin_2.0_lr_1e-06/bb3c2c94'
-        checkpoint = torch.load('{}/best_primal_model.pt'.format(primal_experiment_path))
-        primal_model.load_state_dict(checkpoint['model_state_dict'])
 
-        checkpoint = torch.load('{}/best_dual_model.pt'.format(experiment_path), map_location='cpu')
-        dual_model.load_state_dict(checkpoint['model_state_dict'])
-        dual_trained = True
-    elif len(args.training_modes) == 1:
+    if best:
         checkpoint = torch.load('{}/best_primal_model.pt'.format(experiment_path), map_location='cpu')
-        primal_model.load_state_dict(checkpoint['model_state_dict'])
-        dual_trained = False
     else:
-        if best:
-            checkpoint = torch.load('{}/best_primal_model.pt'.format(experiment_path), map_location='cpu')
-        else:
-            checkpoint = torch.load('{}/primal_model.pt'.format(experiment_path), map_location='cpu')
-        primal_model.load_state_dict(checkpoint['model_state_dict'])
+        checkpoint = torch.load('{}/primal_model.pt'.format(experiment_path), map_location='cpu')
+    primal_model.load_state_dict(checkpoint['model_state_dict'])
 
-        if best:
-            checkpoint = torch.load('{}/best_dual_model.pt'.format(experiment_path), map_location='cpu')
-        else:
-            checkpoint = torch.load('{}/dual_model.pt'.format(experiment_path), map_location='cpu')
-        dual_model.load_state_dict(checkpoint['model_state_dict'])
-        dual_trained = True
+    if best:
+        checkpoint = torch.load('{}/best_dual_model.pt'.format(experiment_path), map_location='cpu')
+    else:
+        checkpoint = torch.load('{}/dual_model.pt'.format(experiment_path), map_location='cpu')
+    dual_model.load_state_dict(checkpoint['model_state_dict'])
+    dual_trained = True
 
     executer = Trainer(primal_model=primal_model.to(device), dual_model=dual_model.to(device), args=args, device=device, dual_trained=dual_trained)
     test_results, unrolling_results, random_results, full_power_results = executer.eval(loader, num_iters=NUM_EPOCHS, 
                                                                                         adjust_constraints=args.adjust_constraints, fix_mu_uncons=fix_mu_uncons)
+    
     modes_list = ['SA', 'random', 'full_power']
     if 'dual' in args.training_modes:
         assert unrolling_results is not None, 'unrolling results are None'
@@ -151,10 +113,10 @@ def main(experiment_path, mu_uncons=0.0, best = True):
         all_epoch_results['unrolling', 'test_mu_over_time'].append(unrolling_results['test_mu_over_time'])
         all_epoch_results['unrolling', 'dual_fn'].append(np.stack(unrolling_results['dual_fn']))
 
-    plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=NUM_EPOCHS, unrolling_iters=args.dual_num_blocks+1, pathname='{}/figs/{}_{}_'.format(experiment_path, args.mu_uncons, best))
-    plot_final_percentiles_comparison(all_epoch_results, pathname='{}/figs/{}_{}_'.format(experiment_path, args.mu_uncons, best))
+    plotting_SA(all_epoch_results, args.r_min, args.P_max, num_agents=args.n, num_iters=NUM_EPOCHS, unrolling_iters=args.dual_num_blocks+1, pathname='{}/figs/{}_{}_'.format(experiment_path, variable, best))
+    plot_final_percentiles_comparison(all_epoch_results, pathname='{}/figs/{}_{}_'.format(experiment_path, variable, best))
     if args.constrained_subnetwork < 1:
-        plot_subnetworks(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)) , args.P_max, args.n, pathname='{}/figs/{}_{}_'.format(experiment_path, args.mu_uncons, best))
+        plot_subnetworks(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)) , args.P_max, args.n, pathname='{}/figs/{}_{}_'.format(experiment_path, variable, best))
 
 
     print('ok!')
@@ -163,14 +125,16 @@ def main(experiment_path, mu_uncons=0.0, best = True):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DA Unrolling - Wireless Allocation Test')
-    parser.add_argument('--experiment_path', type=str, default='subnetwork_m_100_R_2000_Pmax_0_regular_ss_1.0_resilience_0.0_depth_2_MUmax_1.0_rMin_1.5_lr_0.0001/bb2ed3f8')
+    parser.add_argument('--experiment_path', type=str, default="subnetwork_m_100_R_2000_Pmax_0_regular_ss_1.0_resilience_0.0_depth_3_MUmax_1.0_rMin_1.5_lr_0.0001/703acd18")
     parser.add_argument('--best', action='store_true', default=False, help='use best model')
-    # primal: subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_0.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/842c4d5c
-    # subnetwork_m_100_R_2500_Pmax_0_ss_1.0_resilience_100.0_depth_3_MUmax_5.0_rMin_1.5_lr_0.0001/24dc8c93
+    # parser.add_argument('--R', type=int, default=2000, help='Size of the map')
+    # parser.add_argument('--constrained_subnetwork', type=float, default=0.5, help='impose constraints on part of the agents, 1 <==> full network')
+    # parser.add_argument('--graph_type', type=str, default='regular', choices=['CR', 'regular'], help='Type of graph to generate')
+    # parser.add_argument('--sparse_graph_thresh', type=float, default=6e-2, help='Threshold for sparse graph generation')
+    parser.add_argument('--TxLoc_perturbation_ratio', type=float, default=10, help='Perturbation ratio for transmitter locations')
     test_args = parser.parse_args()
 
-    for mu_uncons in [0.0]:
-        print(test_args.experiment_path, mu_uncons)
-        main('results/{}'.format(test_args.experiment_path), mu_uncons=mu_uncons, best=test_args.best)
+
+    main('results/{}'.format(test_args.experiment_path), best=test_args.best, perturbation_ratio=test_args.TxLoc_perturbation_ratio)
     print('ok!')
 

@@ -72,8 +72,8 @@ class Trainer():
                 data.edge_index_l, data.edge_weight_l, data.weighted_adjacency_l, \
                 data.transmitters_index, data.num_graphs
             
-            edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
-                                                                    num_nodes=self.args.n, method="threshold", eps=2e-2)
+            # edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
+            #                                                         num_nodes=self.args.n, method="threshold", eps=2e-2)
             
         if hasattr(self.primal_model, 'cons_lvl'):
             delattr(self.primal_model, 'cons_lvl')
@@ -153,8 +153,8 @@ class Trainer():
                 data.weighted_adjacency, data.weighted_adjacency_l, \
                 data.transmitters_index, data.num_graphs
             
-            edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
-                                                                    num_nodes=self.args.n, method="threshold", eps=2e-2)
+            # edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
+            #                                                         num_nodes=self.args.n, method="threshold", eps=2e-2)
             
             loss_list = []
             if num_samplers > 1:
@@ -364,14 +364,14 @@ class Trainer():
                 data.weighted_adjacency, data.weighted_adjacency_l, \
                 data.transmitters_index, data.num_graphs
             
-            edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
-                                                                    num_nodes=self.args.n, method="threshold", eps=2e-2)
+            # edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
+            #                                                         num_nodes=self.args.n, method="threshold", eps=2e-2)
             
             self.dual_model.eval()
             self.primal_model.eval()
             
             # Forward pass
-            outputs_list = self.unroll_DA(edge_index_l=edge_index_l, edge_weight_l=edge_weight_l, a_l=a_l, transmitters_index=transmitters_index, num_graphs=num_graphs)
+            outputs_list = self.unroll_DA(edge_index_l=edge_index_l, edge_weight_l=edge_weight_l, a_l=a_l, transmitters_index=transmitters_index, num_graphs=num_graphs, mode='primal')
             
             # calculate the loss
             loss, constraints_loss, dual_gap = self.dual_model.loss(outputs_list, self.args.r_min, num_graphs, constraint_eps=0.0, metric=self.args.metric,

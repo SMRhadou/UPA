@@ -84,7 +84,7 @@ def plot_subnetworks(all_epoch_results, constrained_agents, P_max, n, pathname=N
 
     # Define fixed bins for consistent comparison
     power_bins = np.linspace(0, 1, 50)  # From 0 to 1 for normalized power
-    rate_bins = np.linspace(0, 12, 50)   # Adjust range based on your typical rate values
+    rate_bins = np.linspace(0, 12, 30)   # Adjust range based on your typical rate values
 
     for i, mode in enumerate(modes_list):
         power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])[-1,:,-1].reshape(-1, n)
@@ -173,8 +173,8 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
             # ax[1,1].set_title('Power allocated % P_max')
             power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])
             for i in range(num_curves):
-                ax[0,1].plot(power_allocated[-1,0,:,i]/P_max, label='agent {}'.format(i), color=colors_idx[i])
-                ax[1,1].plot(power_allocated[-1,1,:,i]/P_max, label='agent {}'.format(i), color=colors_idx[i]) 
+                ax[0,1].plot(power_allocated[-1,0,:,i+graph*num_agents]/P_max, label='agent {}'.format(i), color=colors_idx[i])
+                ax[1,1].plot(power_allocated[-1,1,:,i+graph*num_agents]/P_max, label='agent {}'.format(i), color=colors_idx[i]) 
             ax[0,1].set_xlabel('iterations')
             ax[1,1].set_xlabel('iterations')
             # ax[1].legend()
@@ -295,6 +295,7 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
         ax[2].set_xlabel('iterations')
         ax[2].set_ylabel('violation')
         ax[2].grid(True, linestyle='--', alpha=0.7)
+        print(violation.mean((0,-1))[-1].item())
 
         fig.tight_layout()
         fig.savefig(f'{pathname}collective_results_{mode}.png')
@@ -330,8 +331,8 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
         ('rate_15th_percentile', '15%'),
         ('rate_20th_percentile', '20%'),
         ('rate_30th_percentile', '30%'),
-        ('rate_40th_percentile', '40%'),
-        ('rate_50th_percentile', '50%')
+        # ('rate_40th_percentile', '40%'),
+        # ('rate_50th_percentile', '50%')
     ]
     
     # Prepare data for all modes
@@ -389,8 +390,8 @@ def plot_final_percentiles_comparison(all_epoch_results, f_min=None, pathname=No
         ax.axhline(y=f_min, color='r', linestyle='--', linewidth=1, label=r'$r_{min}$')
     
     # Customize the plot
-    ax.set_ylabel('Rate (bits/s/Hz/agent)')
-    ax.set_title('Violation Percentiles Comparison')
+    ax.set_ylabel('Rate')
+    # ax.set_title('Violation Percentiles Comparison')
     ax.set_xticks([r + 2*bar_width for r in r1.tolist()])
     ax.set_xticklabels([label for _, label in metrics])
     ax.legend()
