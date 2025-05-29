@@ -38,7 +38,7 @@ def make_parser():
     parser.add_argument('--m', type=int, default=100, help='Number of transmitters')
     parser.add_argument('--n', type=int, default=100, help='Number of receivers')
     parser.add_argument('--T', type=int, default=1, help='Number of time slots for each configuration')
-    parser.add_argument('--R', type=int, default=2000, help='Size of the map')
+    parser.add_argument('--R', type=int, default=3500, help='Size of the map')
     parser.add_argument('--density_mode', type=str, default='var_density', choices=['var_density', 'fixed_density'], help='Density mode')
     parser.add_argument('--BW', type=float, default=20e6, help='Bandwidth (Hz)')
     parser.add_argument('--P_maxdBm', type=float, default=0, help='Maximum transmit power (dBm)')
@@ -47,7 +47,7 @@ def make_parser():
     parser.add_argument('--T_0', type=int, default=1, help='Size of the iteration window for averaging recent rates for dual variable updates')
     parser.add_argument('--metric', type=str, default='rates', choices=['rates', 'power'], help='Metric for rate calculation')
     parser.add_argument('--constrained_subnetwork', type=float, default=0.5, help='impose constraints on part of the agents, 1 <==> full network')
-    parser.add_argument('--graph_type', type=str, default='regular', choices=['CR', 'regular'], help='Type of graph to generate')
+    parser.add_argument('--graph_type', type=str, default='CR', choices=['CR', 'regular'], help='Type of graph to generate')
     parser.add_argument('--sparse_graph_thresh', type=float, default=6e-2, help='Threshold for sparse graph generation')
     parser.add_argument('--TxLoc_perturbation_ratio', type=float, default=20, help='Perturbation ratio for transmitter locations')
 
@@ -58,18 +58,18 @@ def make_parser():
     parser.add_argument('--noisy_training', action='store_true', default=True, help='Add noise to the layers outputs during raining')
     parser.add_argument('--dual_training_loss', type=str, default='lagrangian', choices=['lagrangian', 'complementary_slackness'], help='Loss function for dual training')
     parser.add_argument("--rates_prop_grads", action="store_true", default=False, help="Propagate gradients through the rate calculation")
-    parser.add_argument('--num_samples_train', type=int, default=1, help='Number of training samples')
-    parser.add_argument('--num_samples_test', type=int, default=1, help='Number of test samples')
+    parser.add_argument('--num_samples_train', type=int, default=2048, help='Number of training samples')
+    parser.add_argument('--num_samples_test', type=int, default=128, help='Number of test samples')
     parser.add_argument('--batch_size', type=int, default=256, help='Batch size/No. of graphs in a batch')
     parser.add_argument('--num_samplers', type=int, default=128, help='Number of samplers for the data loader')
     parser.add_argument('--num_epochs_primal', type=int, default=1, help='Number of training epochs')
     parser.add_argument('--num_epochs_dual', type=int, default=25, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=2000, help='Number of training cycles')
-    parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training (e.g., cuda:0, cpu)')
+    parser.add_argument('--device', type=str, default='cuda:1', help='Device to use for training (e.g., cuda:0, cpu)')
 
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
-    parser.add_argument('--lr_primal_multiplier', type=float, default=1e-5, help='Learning rate for Lagrangian multipliers in trainnig primal model')
+    parser.add_argument('--lr_primal_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers in trainnig primal model')
     parser.add_argument('--primal_constraint_eps', type=float, default=0.0, help='constraint parameter in the descent constraints associated with training the primal network')
 
     parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
@@ -285,10 +285,15 @@ def main(args):
                     if phase == 'train':
                         _, multipliers = trainer.train(epoch, loader[mode][phase], training_multipliers[mode], mode=mode)
                         training_multipliers[mode] = multipliers
-                    
-                    elif phase == 'valid' and mode == 'dual':
-                        with torch.no_grad():
-                            eval_loss = trainer.validate(loader[mode][phase])
+
+                    elif phase == 'valid':
+                        if mode == 'primal' and len(args.training_modes) == 1:
+                            eval_loss, _ = trainer.eval_primal(loader[mode][phase], num_iters=args.num_iters)
+                        elif mode == 'dual':
+                            with torch.no_grad():
+                                eval_loss = trainer.validate(loader[mode][phase])
+                        else:
+                            continue
 
                         if args.use_wandb:
                             wandb.log({'eval/evaluation loss': eval_loss})
@@ -317,8 +322,8 @@ def main(args):
                                 wandb.run.summary.update({"best_eval_loss": best_loss, "best_epoch": epoch})
                                 wandb.log({'eval/best evaluation loss': eval_loss})
 
-                            primal_results = trainer.eval_primal(loader[mode]['test'], num_iters=args.num_iters)  
-                            plot_testing(primal_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, pathname='./results/{}/figs/{}_'.format(experiment_name, epoch))
+                            # primal_results = trainer.eval_primal(loader[mode]['test'], num_iters=args.num_iters)  
+                            # plot_testing(primal_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, pathname='./results/{}/figs/{}_'.format(experiment_name, epoch))
 
                                 # SA_results, unrolling_results, random_results, full_power_results = trainer.eval(loader[mode][phase], num_iters=args.num_iters,
                                 #                                                                                 adjust_constraints=False)
@@ -359,17 +364,18 @@ def main(args):
         checkpoint = {
                         'model_state_dict': trainer.primal_model.state_dict(),
                         'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
-                        'loss': eval_loss,
-                        'epoch': epoch*cycle,
+                        'loss': eval_loss if 'eval_loss' in locals() else None,
+                        'epoch': epoch*cycle if 'epoch' in locals() else None,
                     }
         torch.save(checkpoint, './results/{}/primal_model.pt'.format(experiment_name))
-        checkpoint = {
-                        'model_state_dict': trainer.dual_model.state_dict(),
-                        'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
-                        'loss': eval_loss,
-                        'epoch': epoch*cycle,
-                    }
-        torch.save(checkpoint, './results/{}/dual_model.pt'.format(experiment_name))
+        if len(args.training_modes) > 1:
+            checkpoint = {
+                            'model_state_dict': trainer.dual_model.state_dict(),
+                            'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
+                            'loss': eval_loss,
+                            'epoch': epoch*cycle,
+                        }
+            torch.save(checkpoint, './results/{}/dual_model.pt'.format(experiment_name))
 
 
     print('Training complete!')

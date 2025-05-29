@@ -387,7 +387,7 @@ class Trainer():
 
 
     def eval_primal(self, loader, num_iters=None, **kwargs):
-        adjust_constraints = kwargs.get('adjust_constraints', True)
+        adjust_constraints = kwargs.get('adjust_constraints', False)
         fix_mu_uncons = kwargs.get('fix_mu_uncons', True)
 
         test_results = defaultdict(list)
@@ -399,25 +399,25 @@ class Trainer():
                                         self.args.n, self.args.r_min, self.noise_var, num_iters, self.args.ss_param, 
                                         self.args.mu_init, self.mu_uncons, self.device,
                                         adjust_constraints, fix_mu_uncons)
-        violation = violation_dict['violation']
+            violation = violation_dict['violation']
 
-        constrained_agents = int(np.floor(self.args.constrained_subnetwork*self.args.n)) 
-        percentile_list = [5, 10, 15, 20, 30, 40, 50]
+            constrained_agents = int(np.floor(self.args.constrained_subnetwork*self.args.n)) 
+            percentile_list = [5, 10, 15, 20, 30, 40, 50]
 
-        test_results['rate_mean'].append(violation_dict['rate_mean'])
-        test_results['all_Ps'].append(torch.stack(all_Ps).detach().cpu())
-        test_results['all_rates'].append(torch.stack(all_rates).detach().cpu())
-        test_results['test_mu_over_time'].append(torch.stack(mu_over_time).detach().cpu())
-        test_results['test_L_over_time'].append(torch.stack(L_over_time).detach().cpu())
-        for percentile in percentile_list:
-            test_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(data.num_graphs, self.args.n)[:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
-        test_results['mean_violation'].append(violation.mean().item())
-        test_results['violation_rate'].append(violation_dict['violation_rate'])
-        test_results['constrained_mean_rate'].append(violation_dict['constrained_rate_mean'])
-        test_results['unconstrained_mean_rate'].append(violation_dict['unconstrained_rate_mean'])
-        test_results['L_over_time'].append(torch.stack(L_over_time).detach().cpu().numpy())
+            test_results['rate_mean'].append(violation_dict['rate_mean'])
+            test_results['all_Ps'].append(torch.stack(all_Ps).detach().cpu())
+            test_results['all_rates'].append(torch.stack(all_rates).detach().cpu())
+            test_results['test_mu_over_time'].append(torch.stack(mu_over_time).detach().cpu())
+            test_results['test_L_over_time'].append(torch.stack(L_over_time).detach().cpu())
+            for percentile in percentile_list:
+                test_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(data.num_graphs, self.args.n)[:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
+            test_results['mean_violation'].append(violation.mean().item())
+            test_results['violation_rate'].append(violation_dict['violation_rate'])
+            test_results['constrained_mean_rate'].append(violation_dict['constrained_rate_mean'])
+            test_results['unconstrained_mean_rate'].append(violation_dict['unconstrained_rate_mean'])
+            test_results['L_over_time'].append(torch.stack(L_over_time).detach().cpu().numpy())
 
-        return test_results
+        return np.stack(test_results['L_over_time'])[:,-1].mean().item(), test_results
             
 
     def eval(self, loader, num_iters=None, **kwargs):

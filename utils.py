@@ -2,6 +2,8 @@ import numpy as np
 import torch
 from numpy import linalg as LA
 from torch_geometric.data import Data, Dataset
+import pandas as pd  
+import os
 
 from collections import defaultdict
 
@@ -112,18 +114,176 @@ class WirelessDataset(Dataset):
 
 
 
-  
-    # # create optimizer
-    # # optimizer = torch.optim.Adam(model.parameters(), lr=lr_main, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-    # # optimizer = torch.optim.SGD(model.parameters(), lr=lr_main, momentum=0.9)
-    # # optimizer = torch.optim.RMSprop(model.parameters(), lr=lr_main, alpha=0.9)
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=lr_main, weight_decay=1e-5)
-    # # optimizer = torch.optim.Adamax(model.parameters(), lr=lr_main)
-    # # optimizer = torch.optim.Adagrad(model.parameters(), lr=lr_main)
-    # # optimizer = torch.optim.Adamax(model.parameters(), lr=lr_main)
-    # # optimizer = torch.optim.LBFGS(model.parameters(), lr=lr_main)
-    # # optimizer = torch.optim.SparseAdam(model.parameters(), lr=lr_main)
-    # # optimizer = torch.optim.ASGD(model.parameters(), lr=lr_main)
+
+def save_results_to_csv(all_epoch_results, args, pathname=None, filename='results.csv'):
+    assert pathname is not None, 'Please provide a pathname to save the results'
+    
+    # Create full filepath
+    filepath = f'{pathname}/{filename}'
+    
+    # Extract the metrics you want to save
+    modes = ['SA', 'unrolledPrimal', 'unrolling', 'full_power', 'random']
+    available_modes = [mode for mode in modes if (mode, 'rate_mean') in all_epoch_results]
+    
+    # Dictionary to store results
+    data = {
+        'timestamp': pd.Timestamp.now(),
+        'f_min': args.r_min,
+        'P_max': args.P_max,
+        'n': args.n,
+        'm': args.m,
+        'constrained_subnetwork': args.constrained_subnetwork,
+        'graph_type': args.graph_type,
+        'sparse_graph_thresh': args.sparse_graph_thresh,
+        'TxLoc_perturbation_ratio': args.TxLoc_perturbation_ratio,
+        'R': args.R,
+    }
+    
+    # Add metrics for each available mode
+    for mode in available_modes:
+        if (mode, 'rate_mean') in all_epoch_results:
+            data[f'{mode}_rate_mean'] = all_epoch_results[mode, 'rate_mean'][-1]
+        if (mode, 'violation_rate') in all_epoch_results:
+            data[f'{mode}_violation_rate'] = all_epoch_results[mode, 'violation_rate'][-1]
+        if (mode, 'mean_violation') in all_epoch_results:
+            data[f'{mode}_mean_violation'] = all_epoch_results[mode, 'mean_violation'][-1]
+        
+        # Add percentiles if available
+        for percentile in [5, 10, 15, 20, 30]:
+            key = (mode, f'rate_{percentile}th_percentile')
+            if key in all_epoch_results:
+                data[f'{mode}_rate_{percentile}th_percentile'] = all_epoch_results[key][-1]
+    
+    # Create DataFrame
+    results_df = pd.DataFrame([data])
+    
+    try:
+        # Check if file exists and load it
+        existing_df = pd.read_csv(filepath)
+        # Append new results
+        updated_df = pd.concat([existing_df, results_df], ignore_index=True)
+        updated_df.to_csv(filepath, index=False)
+        print(f"Results appended to {filepath}")
+    except FileNotFoundError:
+        # Create new file if it doesn't exist
+        results_df.to_csv(filepath, index=False)
+        print(f"Results saved to {filepath}")
+        
+    return results_df
+
+
+
+def read_and_analyze_results(experiment_path, filename='results.csv'):
+    """
+    Read the results CSV file and perform basic analysis
+    
+    Parameters:
+        experiment_path: Path to the experiment directory
+        filename: Name of the CSV file
+        
+    Returns:
+        pandas DataFrame with the results or None if error
+    """
+    import os
+    import pandas as pd
+    
+    # Create full filepath
+    filepath = os.path.join(experiment_path, filename)
+    
+    # Read the CSV file
+    try:
+        results_df = pd.read_csv(filepath)
+        print(f"Successfully loaded {len(results_df)} result entries")
+        
+        # Display basic statistics
+        print("\nBasic statistics for key metrics:")
+        numeric_cols = [col for col in results_df.columns if col.endswith('_rate_mean') 
+                       or col.endswith('violation_rate') 
+                       or col.endswith('_mean_violation')]
+        print(results_df[numeric_cols].describe())
+        
+        return results_df
+        
+    except FileNotFoundError:
+        print(f"Error: File not found at {filepath}")
+        return None
+    except pd.errors.EmptyDataError:
+        print(f"Error: No data in file at {filepath}")
+        return None
+    except Exception as e:
+        print(f"Error reading the file: {e}")
+        return None
+
+
+def plot_results_vs_R(results_df, metrics=['rate_mean', 'violation_rate'], save_dir=None):
+    """
+    Plot metrics vs R from results DataFrame
+    
+    Parameters:
+        results_df: pandas DataFrame with results
+        metrics: list of metrics to plot (without method prefix)
+        save_dir: directory to save plots (uses current directory if None)
+    """
+    import matplotlib.pyplot as plt
+    import os
+    
+    if results_df is None or 'R' not in results_df.columns:
+        print("Cannot create plots: DataFrame is None or doesn't contain R column")
+        return
+    
+    # Check if we have different n values
+    if 'n' in results_df.columns:
+        n_values = results_df['n'].unique()
+    else:
+        n_values = [None]  # If n is not in the dataframe
+    
+    # Create plots for each n value and metric
+    for metric in metrics:
+        for n_value in n_values:
+            # Filter data for this n if applicable
+            if n_value is not None:
+                df_n = results_df[results_df['n'] == n_value]
+                n_suffix = f"_n{n_value}"
+            else:
+                df_n = results_df
+                n_suffix = ""
+            
+            # Find columns for this metric
+            metric_cols = [col for col in df_n.columns if col.endswith(f'_{metric}')]
+            
+            if not metric_cols:
+                continue
+                
+            # Create plot
+            plt.figure(figsize=(10, 6))
+            
+            # Plot each method
+            for col in metric_cols:
+                method_name = col.replace(f'_{metric}', '')
+                # Sort by R to ensure line is drawn correctly
+                plot_data = df_n.sort_values('R')
+                plt.plot(plot_data['R'], plot_data[col], 
+                         marker='o', linewidth=2, label=method_name)
+            
+            # Add labels and styling
+            plt.xlabel('R (Environment Size)', fontsize=14)
+            plt.ylabel(metric.replace('_', ' ').title(), fontsize=14)
+            
+            title_n = f" (n={n_value})" if n_value is not None else ""
+            plt.title(f'{metric.replace("_", " ").title()} vs Environment Size{title_n}', fontsize=16)
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.legend(fontsize=12)
+            plt.tight_layout()
+            
+            # Save the figure
+            if save_dir:
+                os.makedirs(save_dir, exist_ok=True)
+                plt.savefig(os.path.join(save_dir, f'{metric}_vs_R{n_suffix}.pdf'))
+                print(f"Created plot for {metric}{' (n='+str(n_value)+')' if n_value is not None else ''}")
+            else:
+                plt.show()
+
+
 
 
 
