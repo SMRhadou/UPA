@@ -16,7 +16,6 @@ from torch_geometric.loader import DataLoader
 from core.data_gen import create_data
 from core.channel import max_D_TxRx
 from utils import WirelessDataset, simple_policy
-from utils_plots import plotting_SA, plot_final_percentiles_comparison, plot_testing, plot_subnetworks
 
 from core.trainer import Trainer
 from core.modules import PrimalModel, DualModel
@@ -38,7 +37,7 @@ def make_parser():
     parser.add_argument('--m', type=int, default=100, help='Number of transmitters')
     parser.add_argument('--n', type=int, default=100, help='Number of receivers')
     parser.add_argument('--T', type=int, default=1, help='Number of time slots for each configuration')
-    parser.add_argument('--R', type=int, default=3500, help='Size of the map')
+    parser.add_argument('--R', type=int, default=2000, help='Size of the map')
     parser.add_argument('--density_mode', type=str, default='var_density', choices=['var_density', 'fixed_density'], help='Density mode')
     parser.add_argument('--BW', type=float, default=20e6, help='Bandwidth (Hz)')
     parser.add_argument('--P_maxdBm', type=float, default=0, help='Maximum transmit power (dBm)')
@@ -47,7 +46,7 @@ def make_parser():
     parser.add_argument('--T_0', type=int, default=1, help='Size of the iteration window for averaging recent rates for dual variable updates')
     parser.add_argument('--metric', type=str, default='rates', choices=['rates', 'power'], help='Metric for rate calculation')
     parser.add_argument('--constrained_subnetwork', type=float, default=0.5, help='impose constraints on part of the agents, 1 <==> full network')
-    parser.add_argument('--graph_type', type=str, default='CR', choices=['CR', 'regular'], help='Type of graph to generate')
+    parser.add_argument('--graph_type', type=str, default='regular', choices=['CR', 'regular'], help='Type of graph to generate')
     parser.add_argument('--sparse_graph_thresh', type=float, default=6e-2, help='Threshold for sparse graph generation')
     parser.add_argument('--TxLoc_perturbation_ratio', type=float, default=20, help='Perturbation ratio for transmitter locations')
 
@@ -66,11 +65,11 @@ def make_parser():
     parser.add_argument('--num_epochs_dual', type=int, default=25, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=2000, help='Number of training cycles')
-    parser.add_argument('--device', type=str, default='cuda:1', help='Device to use for training (e.g., cuda:0, cpu)')
+    parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training (e.g., cuda:0, cpu)')
 
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_primal_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers in trainnig primal model')
-    parser.add_argument('--primal_constraint_eps', type=float, default=0.0, help='constraint parameter in the descent constraints associated with training the primal network')
+    parser.add_argument('--primal_constraint_eps', type=float, default=0.2, help='constraint parameter in the descent constraints associated with training the primal network')
 
     parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')

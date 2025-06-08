@@ -75,14 +75,15 @@ def plot_testing(test_results, f_min, P_max, num_curves=15, num_agents=100, num_
     fig.savefig(f'{pathname}SA_L_over_time.png')
 
 
-def plot_subnetworks(all_epoch_results, constrained_agents, args, pathname=None):
+def plot_constrainedvsUnconsrained_histograms(all_epoch_results, constrained_agents, args, pathname=None, modes_list=None):
     n = args.n
     P_max = args.P_max
     f_min = args.r_min
 
-    modes_list = ['SA', 'unrolling']
+    # modes_list = ['SA', 'unrolling']
     plot_labels = {
         'SA': 'State-augmented GNN',
+        'unrolledPrimal': 'Unrolled GNN',
         'unrolling': 'Primal-dual Unrolling',
         'full_power': 'Full Power',
         'random': 'Random'
@@ -107,10 +108,12 @@ def plot_subnetworks(all_epoch_results, constrained_agents, args, pathname=None)
     alpha = 0.5  # Transparency level
 
     # Define fixed bins for consistent comparison
-    power_bins = np.linspace(0, 1, 50)  # From 0 to 1 for normalized power
-    rate_bins = np.linspace(0, 12, 30)   # Adjust range based on your typical rate values
+    power_bins = np.linspace(0, 1, 25)  # From 0 to 1 for normalized power
+    rate_bins = np.linspace(0, 12, 12*4)   # Adjust range based on your typical rate values
 
     for i, mode in enumerate(modes_list):
+        if mode not in ['SA', 'unrolledPrimal', 'unrolling']:
+            continue
         power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])[-1,:,-1].reshape(-1, n)
         rates = np.stack(all_epoch_results[mode, 'all_rates'])[-1,:,-1].reshape(-1, n)
         
@@ -161,6 +164,8 @@ def plot_subnetworks(all_epoch_results, constrained_agents, args, pathname=None)
     multiplier_bins = np.linspace(0, 5, 50)
     fig, ax = plt.subplots(figsize=(6, 4))
     for i, mode in enumerate(modes_list):
+        if mode not in ['SA', 'unrolling']:
+            continue
         multipliers = np.stack(all_epoch_results[mode, 'test_mu_over_time'])[-1,:,-1]
         multipliers = multipliers.reshape(multipliers.shape[0], -1, n)[:,:,:50]
 
@@ -175,7 +180,7 @@ def plot_subnetworks(all_epoch_results, constrained_agents, args, pathname=None)
 
 
 
-def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, num_iters=800, unrolling_iters=6, pathname=None, all=True):
+def plotting_collective(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, num_iters=800, unrolling_iters=6, pathname=None, modes_list=None):
     assert pathname is not None, 'Please provide a pathname to save the figures'
 
     # Use a colormap instead of manually specifying colors
@@ -205,10 +210,10 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
         'unrolling': 'Primal-dual Unrolling (Ours)',
     }
     
-    if all:
-        modes_list = ['SA', 'unrolledPrimal', 'unrolling']
-    else:
-        modes_list = ['SA']
+    # if all:
+    #     modes_list = ['SA', 'unrolledPrimal', 'unrolling']
+    # else:
+    #     modes_list = ['SA']
 
     fig, ax = plt.subplots(1, 3, figsize=(15, 4))
     
@@ -219,6 +224,8 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
     common_x_length = num_iters
     
     for mode in modes_list:
+        if mode=='random' or mode=='full_power':
+            continue
         # Get correct number of iterations for this mode
         mode_iters = num_iters if mode == 'SA' or mode == 'unrolledPrimal' else unrolling_iters
         
@@ -234,18 +241,18 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
             x_coords = np.arange(mode_iters)
             
         # Plot with different line styles but same color for each mode
-        ax[0].plot(x_coords, power_allocated.mean((0,-1))/P_max, 
-                  color=colors[mode], linestyle=line_styles[0], 
-                  alpha = alpha_main, linewidth=2.0,
-                  label=f'{plot_labels[mode]} - Mean power')
+        # ax[0].plot(x_coords, power_allocated.mean((0,-1))/P_max, 
+        #           color=colors[mode], linestyle=line_styles[0], 
+        #           alpha = alpha_main, linewidth=2.0,
+        #           label=f'{plot_labels[mode]} - Mean power')
                   
         ax[0].plot(x_coords, power_allocated[:,:,:int(np.floor(num_agents/2))].mean((0,-1))/P_max, 
-                  color=colors[mode], linestyle=line_styles[1], 
+                  color=colors[mode], linestyle=line_styles[0], 
                   alpha = alpha_secondary, linewidth=2.0,
                   label=f'{plot_labels[mode]} - Mean constrained power')
                   
         ax[0].plot(x_coords, power_allocated[:,:,int(np.floor(num_agents/2)):].mean((0,-1))/P_max, 
-                  color=colors[mode], linestyle=line_styles[2], 
+                  color=colors[mode], linestyle=line_styles[1], 
                   alpha = alpha_secondary, linewidth=2.0,
                   label=f'{plot_labels[mode]} - Mean unconstrained power')
         
@@ -258,14 +265,14 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
         rates = rates.reshape(rates.shape[0], rates.shape[1], mode_iters, -1, num_agents)
         rates = torch.tensor(rates).squeeze(0).transpose(1,2).reshape(-1, mode_iters, num_agents)
         
-        ax[1].plot(x_coords, rates.mean((0,-1)),
-                  color=colors[mode], linestyle=line_styles[0], alpha=alpha_main, linewidth=2.0,)
+        # ax[1].plot(x_coords, rates.mean((0,-1)),
+        #           color=colors[mode], linestyle=line_styles[0], alpha=alpha_main, linewidth=2.0,)
                   
         ax[1].plot(x_coords, rates[:,:,:int(np.floor(num_agents/2))].mean((0,-1)),
-                  color=colors[mode], linestyle=line_styles[1], alpha=alpha_secondary, linewidth=2.0,)
+                  color=colors[mode], linestyle=line_styles[0], alpha=alpha_secondary, linewidth=2.0,)
                   
         ax[1].plot(x_coords, rates[:,:,int(np.floor(num_agents/2)):].mean((0,-1)),
-                  color=colors[mode], linestyle=line_styles[2], alpha=alpha_secondary, linewidth=2.0,)
+                  color=colors[mode], linestyle=line_styles[1], alpha=alpha_secondary, linewidth=2.0,)
 
         violation = torch.minimum(torch.zeros_like(rates[:,:,:int(np.floor(num_agents/2))]), 
                                 rates[:,:,:int(np.floor(num_agents/2))]-f_min).abs()
@@ -298,9 +305,9 @@ def plotting_SA(all_epoch_results, f_min, P_max, num_curves=10, num_agents=100, 
     # Create a common legend for line styles
     from matplotlib.lines import Line2D
     line_style_handles = [
-        Line2D([0], [0], color='black', linestyle=line_styles[0], label='All agents'),
-        Line2D([0], [0], color='black', linestyle=line_styles[1], label='Constrained agents'),
-        Line2D([0], [0], color='black', linestyle=line_styles[2], label='Unconstrained agents')
+        # Line2D([0], [0], color='black', linestyle=line_styles[0], label='All agents'),
+        Line2D([0], [0], color='black', linestyle=line_styles[0], label='Constrained agents'),
+        Line2D([0], [0], color='black', linestyle=line_styles[1], label='Unconstrained agents')
     ]
     
     # Add legends with larger fonts

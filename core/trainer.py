@@ -186,8 +186,13 @@ class Trainer():
                                                                     self.args.mu_init, self.mu_uncons, self.device, False, True, num_samplers=10)
                     mu_over_time = torch.stack(mu_over_time).reshape(-1, self.args.n)
                     # Choose 32 random rows from mu_over_time
-                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers]
+                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers//2]
                     mu = mu_over_time[selected_indices].view(-1,1).to(self.device)
+
+                    random_elements = num_graphs*num_samplers*self.args.n - mu.shape[0]
+                    mu_random = self.multiplier_sampler(random_elements, self.args.mu_max, self.args.zero_probability, 
+                             dist=self.args.mu_distribution, all_zeros=self.args.all_zeros).to(self.device)
+                    mu = torch.cat((mu, mu_random.view(-1, 1)), dim=0)
 
                 elif self.args.lambda_sampler == 'hybrid':
                     mu_over_time, _, _, _, _ = self.dual_model.DA(self.primal_model, data, self.args.lr_DA_dual, self.args.dual_resilient_decay, 

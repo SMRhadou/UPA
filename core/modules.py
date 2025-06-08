@@ -150,7 +150,7 @@ class PrimalModel(nn.Module):
 
 
     def descending_constraints(self, L_list, constraint_eps):
-        return (L_list[1:] - (1-constraint_eps) * L_list[:-1]).mean(-1)
+        return (L_list[1:] - (1+constraint_eps) * L_list[:-1]).mean(-1)
     
 
 
