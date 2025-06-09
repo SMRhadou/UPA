@@ -3,9 +3,6 @@ import numpy as np
 from utils import calc_rates
 import wandb
 
-from functorch import make_functional, vmap
-from torch.func import functional_call, jacrev
-
 from collections import defaultdict
 from torch_geometric.transforms import GDC
 

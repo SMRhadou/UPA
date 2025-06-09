@@ -68,11 +68,11 @@ def make_parser():
     parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training (e.g., cuda:0, cpu)')
 
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
-    parser.add_argument('--lr_primal_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers in trainnig primal model')
+    parser.add_argument('--lr_primal_multiplier', type=float, default=0.0, help='Learning rate for Lagrangian multipliers in trainnig primal model')
     parser.add_argument('--primal_constraint_eps', type=float, default=0.2, help='constraint parameter in the descent constraints associated with training the primal network')
 
     parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
-    parser.add_argument('--lr_dual_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
+    parser.add_argument('--lr_dual_multiplier', type=float, default=0.0, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
     parser.add_argument('--dual_constraint_eps', type=float, default=0.2, help='constraint parameter in the ascent constraints associated with training the dual network')
 
     parser.add_argument('--dual_resilient_decay', type=float, default=0.0, help='Resilient dual variables')

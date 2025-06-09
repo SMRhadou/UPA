@@ -28,7 +28,7 @@ random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 
-def main(experiment_path, sa_path=None, best=True, perturbation_ratio=None, R=None, r_min=None):
+def main(experiment_path, sa_path=None, best=True, perturbation_ratio=None, R=None, r_min=None, n=None):
 
     all_epoch_results = defaultdict(list)
     # read args file as a dictionary
@@ -74,6 +74,12 @@ def main(experiment_path, sa_path=None, best=True, perturbation_ratio=None, R=No
         variable = R
         data_path = './data/{}_{}_{}_R_{}.json'.format(experiment_path.split('/')[-2][:30], args.graph_type, max_D_TxRx, R)
         data_list = create_data(args.m, args.n, args.T, R, data_path, num_samples, args.P_max, args.noise_var, args.graph_type, 
+                                args.sparse_graph_thresh, perturbation_ratio=args.TxLoc_perturbation_ratio)
+        
+    elif n is not None:
+        variable = n
+        data_path = './data/{}_{}_{}_n_{}.json'.format(experiment_path.split('/')[-2][:30], args.graph_type, max_D_TxRx, n)
+        data_list = create_data(n, n, args.T, args.R, data_path, num_samples, args.P_max, args.noise_var, args.graph_type, 
                                 args.sparse_graph_thresh, perturbation_ratio=args.TxLoc_perturbation_ratio)
     else:
         variable = 0.0
@@ -184,7 +190,7 @@ if __name__ == '__main__':
     parser.add_argument('--R', type=int, default=None, help='Size of the map')
     parser.add_argument('--r_min', type=float, default=None, help='Minimum-rate constraint')
     # parser.add_argument('--m', type=int, default=None, help='Number of transmitters')
-    # parser.add_argument('--n', type=int, default=None, help='Number of receivers')
+    parser.add_argument('--n', type=int, default=None, help='Number of receivers')
     # parser.add_argument('--constrained_subnetwork', type=float, default=0.5, help='impose constraints on part of the agents, 1 <==> full network')
     # parser.add_argument('--graph_type', type=str, default='regular', choices=['CR', 'regular'], help='Type of graph to generate')
     # parser.add_argument('--sparse_graph_thresh', type=float, default=6e-2, help='Threshold for sparse graph generation')
@@ -194,6 +200,6 @@ if __name__ == '__main__':
 
     main('results/{}'.format(test_args.experiment_path), 'results/{}'.format(test_args.sa_path) if test_args.sa_path is not None else None,
             best=test_args.best, perturbation_ratio=test_args.TxLoc_perturbation_ratio,
-            R=test_args.R, r_min=test_args.r_min)
+            R=test_args.R, r_min=test_args.r_min, n=test_args.n)
     print('ok!')
 
