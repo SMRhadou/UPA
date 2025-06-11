@@ -450,7 +450,7 @@ class Trainer():
             test_results['test_mu_over_time'].append(torch.stack(mu_over_time).detach().cpu())
             test_results['test_L_over_time'].append(torch.stack(L_over_time).detach().cpu())
             for percentile in percentile_list:
-                test_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(-1, self.args.n)[1:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
+                test_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.detach().cpu().numpy(), percentile, axis=1).mean().tolist())
             test_results['mean_violation'].append(violation.mean().item())
             test_results['violation_rate'].append(violation_dict['violation_rate'])
             test_results['constrained_mean_rate'].append(violation_dict['constrained_rate_mean'])
@@ -467,9 +467,16 @@ class Trainer():
                 
                 outputs_list = self.unroll_DA(data=data)
                 _, _, rates, dual_fn = outputs_list[-1]
+
+                cons_lvl = torch.cat([self.args.r_min * torch.ones(len(data), constrained_agents).to(self.device), 
+                                            torch.zeros(len(data), int(np.ceil((1-self.args.constrained_subnetwork)*self.args.n))).to(self.device)], dim=1).view(-1, 1)
+
                 # rates = rates.squeeze(-1)
                 for i in range(len(outputs_list)):
-                    violation = torch.minimum(outputs_list[i][2].detach() - self.args.r_min - slack_value, torch.zeros_like(rates)).abs()
+                    # violation = torch.minimum(outputs_list[i][2].detach() - self.args.r_min - slack_value, torch.zeros_like(rates)).abs()
+                    new_constraints_value = outputs_list[i][2].detach() - cons_lvl - slack_value
+                    violation = torch.minimum(new_constraints_value, torch.zeros_like(new_constraints_value)).abs()
+                    violation = violation.view(-1, self.args.n)[:,:constrained_agents]  # Only consider constrained agents
                     violation_rate = (violation>0).sum().float()/violation.numel()
                     unrolling_results['violation_rate'].append(violation_rate.item())
                 
@@ -480,7 +487,7 @@ class Trainer():
                 unrolling_results['rate_mean'].append(torch.mean(rates.view(data.num_graphs, self.args.n).mean(1).detach().cpu()).tolist())
                 unrolling_results['rate_min'].append(torch.min(rates.detach().cpu()).tolist())
                 for percentile in percentile_list:
-                    unrolling_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(data.num_graphs, self.args.n)[:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
+                    unrolling_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.detach().cpu().numpy(), percentile, axis=1).mean().tolist())
                 # unrolling_results['violation_rate'].append(violation_rate.item())
                 unrolling_results['mean_violation'].append(violation.mean().item())
                 unrolling_results['constrained_mean_rate'].append(torch.mean(rates.view(data.num_graphs, self.args.n)[:, :constrained_agents].mean(1).detach().cpu()).tolist())
@@ -491,13 +498,14 @@ class Trainer():
             p = self.args.P_max * torch.rand(data.num_graphs * self.args.n).to(self.device)
             gamma = torch.ones(data.num_graphs * self.args.n, 1).to(self.device)
             rates = calc_rates(p, gamma, data.weighted_adjacency_l[:, :, :], self.noise_var, self.args.ss_param)
-            violation = torch.minimum(rates - self.args.r_min - slack_value, torch.zeros_like(rates)).abs()
+            violation = torch.minimum(rates - cons_lvl - slack_value, torch.zeros_like(rates)).abs()
+            violation = violation.view(-1, self.args.n)[:,:constrained_agents]
             violation_rate = (violation>0).sum().float()/violation.numel()
             
             randPolicy_results['rate_mean'].append(torch.mean(rates.view(data.num_graphs, self.args.n).mean(1).detach().cpu()).tolist())
             randPolicy_results['rate_min'].append(torch.min(rates.detach().cpu()).tolist())
             for percentile in percentile_list:
-                    randPolicy_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(-1, self.args.n)[1:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
+                    randPolicy_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.detach().cpu().numpy(), percentile, axis=1).mean().tolist())
             randPolicy_results['all_Ps'].append(p.detach().cpu().numpy())
             randPolicy_results['all_rates'].append(rates.detach().cpu().numpy())
             randPolicy_results['violation_rate'].append(violation_rate.item())
@@ -509,13 +517,14 @@ class Trainer():
             # Full power
             p = self.args.P_max * torch.ones(data.num_graphs * self.args.n).to(self.device)
             rates = calc_rates(p, gamma, data.weighted_adjacency_l[:, :, :], self.noise_var, self.args.ss_param)
-            violation = torch.minimum(rates - self.args.r_min - slack_value, torch.zeros_like(rates)).abs() 
+            violation = torch.minimum(rates - cons_lvl - slack_value, torch.zeros_like(rates)).abs() 
+            violation = violation.view(-1, self.args.n)[:,:constrained_agents]
             violation_rate = (violation>0).sum().float()/violation.numel()
 
             full_power_results['rate_mean'].append(torch.mean(rates.view(data.num_graphs, self.args.n).mean(1).detach().cpu()).tolist())
             full_power_results['rate_min'].append(torch.min(rates.detach().cpu()).tolist())
             for percentile in percentile_list:
-                    full_power_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.view(-1, self.args.n)[1:, :constrained_agents].detach().cpu().numpy(), percentile, axis=1).mean().tolist())
+                    full_power_results[f'rate_{percentile}th_percentile'].append(-1*np.percentile(-1 * violation.detach().cpu().numpy(), percentile, axis=1).mean().tolist())
             full_power_results['all_Ps'].append(p.detach().cpu().numpy())
             full_power_results['all_rates'].append(rates.detach().cpu().numpy())
             full_power_results['violation_rate'].append(violation_rate.item())

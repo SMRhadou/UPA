@@ -356,8 +356,17 @@ class DualModel(nn.Module):
             mu.data.clamp_(0)
 
             slack_value = - mu.detach()/resilient_weight_decay if adjust_constraints else 0
-            new_constraints_value = rates.detach() - r_min - slack_value
+            # new_constraints_value = rates.detach() - r_min - slack_value
+            # violation = torch.minimum(new_constraints_value, torch.zeros_like(new_constraints_value)).abs()
+
+            m = mu.view(-1, self.n).shape[0]
+            cons_lvl = torch.cat([self.r_min * torch.ones(m, int(np.floor(self.constrained_subnetwork*self.n))).to(self.device), 
+                            torch.zeros(m, int(np.ceil((1-self.constrained_subnetwork)*self.n))).to(self.device)], dim=1).view(-1, 1)
+
+
+            new_constraints_value = rates.detach() - cons_lvl - slack_value
             violation = torch.minimum(new_constraints_value, torch.zeros_like(new_constraints_value)).abs()
+            violation = violation.view(-1, self.n)[:,:int(np.floor(self.constrained_subnetwork*self.n))]
             violation_rate = (violation>0).sum().float()/violation.numel()
             
 

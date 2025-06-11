@@ -3,7 +3,6 @@ import numpy as np
 import torch
 from collections import defaultdict
 from types import SimpleNamespace
-from tqdm import tqdm
 import argparse
 import json
 import random
@@ -11,11 +10,10 @@ import random
 from torch_geometric.loader import DataLoader
 
 from core.data_gen import create_data
-from core.gnn import GNN
 from core.trainer import Trainer
 from core.modules import PrimalModel, DualModel
-from utils import calc_rates, WirelessDataset, simple_policy
-from utils_plots import plot_testing, plot_final_percentiles_comparison, plotting_collective, plot_constrainedvsUnconsrained_histograms
+from utils import WirelessDataset, save_results_to_csv, read_results, plot_ood_results
+from utils_plots import plot_final_percentiles_comparison, plotting_collective, plot_constrainedvsUnconsrained_histograms
 
 NUM_EPOCHS = 800
 max_D_TxRx = 60
@@ -35,6 +33,7 @@ def main(experiment_path, sa_path=None, best=True, perturbation_ratio=None, R=No
     with open('{}/args.json'.format(experiment_path), 'r') as f:
         args = json.load(f)
     args = SimpleNamespace(**args)
+    args.best = best
 
     if sa_path is not None:
         with open('{}/args.json'.format(sa_path), 'r') as f:
@@ -177,14 +176,28 @@ def main(experiment_path, sa_path=None, best=True, perturbation_ratio=None, R=No
         plot_constrainedvsUnconsrained_histograms(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)), args, 
                         pathname='{}/figs/{}_{}_'.format(experiment_path, variable, best), modes_list=modes_list)
 
+    # save mean_violation to an external csv file
+    filename = 'results.csv'
+    save_results_to_csv(all_epoch_results, args, pathname=experiment_path, filename=filename)
+    df = read_results(experiment_path, filename=filename)
+    plot_ood_results(
+        df, 
+        metrics=['rate_mean', 'mean_violation', 'constrained_mean_rate', 'unconstrained_mean_rate'],
+        varying_param='r_min',
+        fixed_params={'R': args.R, 'n': args.n, 'constrained_subnetwork': args.constrained_subnetwork, 'best':best,
+                      'graph_type': args.graph_type, 'sparse_graph_thresh': args.sparse_graph_thresh, 
+                      'TxLoc_perturbation_ratio': args.TxLoc_perturbation_ratio},
+        save_dir=experiment_path
+    )
 
+    
     print('ok!')
 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DA Unrolling - Wireless Allocation Test')
-    parser.add_argument('--experiment_path', type=str, default="subnetwork_m_100_R_2000_Pmax_0_regular_ss_1.0_resilience_0.0_depth_3_MUmax_1.0_rMin_1.5_lr_0.0001/703acd18")
+    parser.add_argument('--experiment_path', type=str, default="subnetwork_m_100_R_2000_Pmax_0_regular_ss_1.0_resilience_0.0_depth_3_MUmax_1.0_rMin_1.5_lr_0.0001/fa35d786")
     parser.add_argument('--sa_path', type=str, default=None) #"subnetwork_m_100_R_2000_Pmax_0_regular_ss_1.0_resilience_0.0_depth_3_MUmax_1.0_rMin_1.5_lr_0.0001/d4de8720")
     parser.add_argument('--best', action='store_true', default=False, help='use best model')
     parser.add_argument('--R', type=int, default=None, help='Size of the map')
