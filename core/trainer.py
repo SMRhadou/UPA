@@ -197,7 +197,7 @@ class Trainer():
                                                                     self.args.mu_init, self.mu_uncons, self.device, False, True, num_samplers=10)
                     mu_over_time = torch.stack(mu_over_time).reshape(-1, self.args.n)
                     # Choose 32 random rows from mu_over_time
-                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers//4]
+                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers//2]
                     mu = mu_over_time[selected_indices].view(-1,1).to(self.device)
                 
                     assert len(self.args.training_modes) == 2
@@ -205,7 +205,7 @@ class Trainer():
                                                   num_graphs=num_graphs*num_samplers, mode=mode)
                     mu_over_time = torch.cat([outputs_list[i][0].view(num_graphs*num_samplers, self.args.n).detach()
                                     for i in range(len(outputs_list))], dim=0)
-                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers//2]
+                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers//4]
                     mu = torch.cat((mu, mu_over_time[selected_indices].view(-1,1).to(self.device)), dim=0)
                     del outputs_list
 

@@ -1,6 +1,9 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+import os
+import pandas as pd
+import pickle
 
 plt.rc('font', family='serif', serif='cm10', size=16)  # Bigger base font size
 plt.rc('axes', labelsize=18, titlesize=20)  # Axis labels and titles
@@ -315,119 +318,7 @@ def plotting_collective(all_epoch_results, f_min, P_max, num_curves=10, num_agen
     ax[2].legend(handles=legend_handles, loc='upper right', fontsize=14)
     
     fig.tight_layout()
-    fig.savefig(f'{pathname}collective_results.pdf')
-
-
-
-    # Histogramns of multipliers, power and rates
-
-
-
-
-
-    # layer = -1
-    # colors_idx = plt.cm.tab20(np.linspace(0, 1, num_curves))
-    # for mode in modes_list:
-    #     for graph in range(3):
-    #         fig, ax = plt.subplots(2, 3, figsize=(12, 6))
-    #         multipliers = np.stack(all_epoch_results[mode, 'test_mu_over_time'])
-    #         for i in range(num_curves):
-    #             ax[0,0].plot(multipliers[-1,0,:,i+graph*num_agents], label='agent {}'.format(i), color=colors_idx[i])
-    #             ax[1,0].plot(multipliers[-1,1,:,i+graph*num_agents], label='agent {}'.format(i), color=colors_idx[i])
-    #         ax[0,0].set_xlabel('iterations')
-    #         ax[1,0].set_xlabel('iterations')
-    #         ax[0,0].set_title('Dual variables')
-    #         ax[1,0].set_title('Dual variables')
-    #         ax[0,0].grid(True, linestyle='--', alpha=0.7)
-    #         ax[1,0].grid(True, linestyle='--', alpha=0.7)
-
-    #         # power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])
-    #         # ax[0,1].hist(power_allocated[-1,0,layer,graph*num_agents:(1+graph)*num_agents]/P_max, 
-    #         #              bins=20, color=colors[mode], alpha=0.7)
-    #         # ax[1,1].hist(power_allocated[-1,1,layer,+graph*num_agents:(1+graph)*num_agents]/P_max, 
-    #         #              bins=20, color=colors[mode], alpha=0.7) 
-    #         # ax[0,1].set_xlabel('p')
-    #         # ax[1,1].set_xlabel('p')
-    #         # ax[0,1].set_title('Power allocated % P_max')
-    #         # ax[1,1].set_title('Power allocated % P_max')
-    #         power_allocated = np.stack(all_epoch_results[mode, 'all_Ps'])
-    #         for i in range(num_curves):
-    #             ax[0,1].plot(power_allocated[-1,0,:,i+graph*num_agents]/P_max, label='agent {}'.format(i), color=colors_idx[i])
-    #             ax[1,1].plot(power_allocated[-1,1,:,i+graph*num_agents]/P_max, label='agent {}'.format(i), color=colors_idx[i]) 
-    #         ax[0,1].set_xlabel('iterations')
-    #         ax[1,1].set_xlabel('iterations')
-    #         # ax[1].legend()
-    #         ax[0,1].set_title('Power allocated')
-    #         ax[1,1].set_title('Power allocated')
-    #         ax[0,1].grid(True, linestyle='--', alpha=0.7)
-    #         ax[1,1].grid(True, linestyle='--', alpha=0.7)
-
-    #         rates = np.stack(all_epoch_results[mode, 'all_rates'])
-    #         iters = unrolling_iters if mode == 'unrolling' else num_iters
-    #         start = 0 #max(0, num_iters-1000)
-    #         for i in range(num_curves):
-    #             ax[0,2].plot(np.arange(start, iters), rates[-1,0,start:,i+graph*num_agents], label='agent {}'.format(i), color=colors_idx[i])
-    #             ax[1,2].plot(np.arange(start, iters), rates[-1,1,start:,i+graph*num_agents], label='agent {}'.format(i), color=colors_idx[i])
-    #         ax[0,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,0,start:,6]), ':k', linewidth=1, label=r'r_min')
-    #         ax[1,2].plot(np.arange(start, iters), f_min*np.ones_like(rates[-1,1,start:,6]), ':k', linewidth=1, label=r'r_min')
-    #         # ax[0,2].set_xlim(start, iters-1)
-    #         # ax[1,2].set_xlim(start, iters-1)
-    #         ax[0,2].set_xlabel('rate')
-    #         ax[1,2].set_xlabel('rate')
-    #         ax[0,2].set_title('Rates')
-    #         ax[1,2].set_title('Rates')
-    #         ax[0,2].grid(True, linestyle='--', alpha=0.7)
-    #         ax[1,2].grid(True, linestyle='--', alpha=0.7)
-    #         fig.tight_layout()
-    #         fig.savefig(f'{pathname}SA_results_{mode}_{graph}.png')
-
-
-    #     fig, ax = plt.subplots(2, 3, figsize=(15, 9))
-    #     num_epochs = len(all_epoch_results[mode, 'all_rates'])
-    #     iters = num_iters if mode == 'SA' else unrolling_iters
-    #     rate_mean = np.stack(all_epoch_results[mode, 'all_rates']).reshape(num_epochs, 4, iters, -1, num_agents).sum(-1)
-    #     for i in range(1):
-    #         for j in range(num_curves):
-    #             ax[i//3, i%3].plot(rate_mean[i,0,:,j], label='graph {}'.format(j))
-    #         ax[i//3, i%3].set_xlabel('iterations')
-    #         ax[i//3, i%3].set_ylabel('mean rate')
-    #         ax[i//3, i%3].set_title(f'training epoch {200*(i+1)}')
-    #         ax[i//3, i%3].legend()
-    #     fig.tight_layout()
-    #     fig.savefig(f'{pathname}SA_mean_rates_{mode}.png')
-
-    # fig, ax = plt.subplots(1, 2, figsize=(12, 3))
-    # for i, mode in enumerate(modes_list):
-    #     iters = num_iters if mode == 'SA' else unrolling_iters
-    #     temp_rates = np.stack(all_epoch_results[mode, 'all_rates']).reshape(1, 4, iters, -1, num_agents)
-    #     violation = [np.abs(np.minimum(temp_rates[:,:,j,:,:50] - f_min, np.zeros_like(temp_rates[:,:,0,:,:50]))).mean().item() for j in range(iters)]
-    #     ax[i].plot(violation, color=colors[mode], linewidth=2)
-    #     ax[i].set_xlabel('layers')
-    #     ax[i].set_ylabel('mean violation')
-    #     ax[i].set_title(f'{mode}')
-    # fig.tight_layout()
-    # fig.savefig(f'{pathname}SA_mean_violation.png')
-
-    # L_over_time = np.stack(all_epoch_results['SA', 'L_over_time'])
-    # # one plot
-    # fig, ax = plt.subplots(figsize=(6, 3))
-    # ax.plot(L_over_time.squeeze(0).mean(axis=0))
-    # ax.set_xlabel('iterations')
-    # ax.set_ylabel('Lagrangian')
-    # fig.tight_layout()
-    # fig.savefig(f'{pathname}SA_L_over_time.png')
-
-    # if all:
-    #     dual_fn = np.stack(all_epoch_results['unrolling', 'dual_fn'])
-    #     # one plot
-    #     fig, ax = plt.subplots(figsize=(6, 3))
-    #     ax.plot(dual_fn.squeeze(0).mean(axis=0))
-    #     ax.set_xlabel('iterations')
-    #     ax.set_ylabel('Dual function')
-    #     fig.tight_layout()
-    #     fig.savefig(f'{pathname}dual_fn.png')
-
-    
+    fig.savefig(f'{pathname}collective_results.pdf')    
 
     print('ok!')
 
@@ -549,3 +440,103 @@ def hist_power(test_results, P_max, name='random', pathname=None):
     fig.savefig(f'{pathname}/results_{name}.png')
 
 
+
+
+def plot_raw_data_histograms(raw_data_files, metrics=['all_Ps', 'all_rates'], mode='unrolling', 
+                             experiment_labels=None, save_path=None):
+    """
+    Load raw data from pickle files and plot histograms for comparison side by side
+    
+    Parameters:
+        raw_data_files: List of paths to raw data pickle files
+        metrics: List of metrics to plot ['all_Ps', 'all_rates']
+        mode: Model mode to plot ('unrolling', 'SA', etc.)
+        experiment_labels: Labels for experiments (defaults to experiment path names)
+        save_path: Path to save generated plots
+    """
+    if len(raw_data_files) < 2:
+        print("Need at least two raw data files for comparison")
+        return
+    
+    if isinstance(metrics, str):
+        metrics = [metrics]  # Convert single metric to list
+        
+    # Use default labels if not provided
+    if experiment_labels is None:
+        experiment_labels = [os.path.basename(os.path.dirname(f)) for f in raw_data_files]
+        
+    # Create subplot figure
+    fig, axes = plt.subplots(1, len(metrics), figsize=(6*len(metrics), 5))
+    if len(metrics) == 1:
+        axes = [axes]  # Make it iterable for single metric case
+    
+    # Process each metric in its own subplot
+    for ax_idx, metric in enumerate(metrics):
+        data_key = f"{mode}_{metric}"
+        all_data = []
+        
+        # Load data from each file
+        for i, file_path in enumerate(raw_data_files):
+            try:
+                with open(file_path, 'rb') as f:
+                    raw_data = pickle.load(f)
+                    
+                if data_key not in raw_data['raw_data']:
+                    print(f"Key {data_key} not found in {file_path}")
+                    continue
+                    
+                data = raw_data['raw_data'][data_key][0][0][-1]
+                data = data.reshape(-1, raw_data['metadata']['n'])[:,:int(np.floor(raw_data['metadata']['n']*raw_data['metadata']['constrained_subnetwork']))]
+                
+                # Flatten data if it's a list of arrays
+                if isinstance(data, list):
+                    data = np.concatenate(data).flatten()
+                all_data.append(data.flatten())
+            except Exception as e:
+                print(f"Error loading data from {file_path}: {e}")
+        
+        if len(all_data) < 2:
+            print(f"Failed to load data from at least two files for metric {metric}")
+            continue
+        
+        # different bins for power and rates using linspace
+        bins = np.linspace(0, 1, 25) if metric == 'all_Ps' else np.linspace(0, 12, 12*4)
+
+        # Plot each experiment's data on current subplot
+        for i, data in enumerate(all_data):
+            if metric == 'all_Ps':
+                data = data / raw_data['metadata']['P_max']
+            axes[ax_idx].hist(data, alpha=0.5, bins=bins, label=experiment_labels[i])
+        
+        # Format labels and title for this subplot
+        pretty_metric = 'Rate' if metric == 'all_rates' else 'Power'
+        pretty_mode = {'unrolling': 'Primal-dual Unrolling'}.get(mode, mode)
+        
+        axes[ax_idx].set_xlabel(pretty_metric, fontsize=14)
+        axes[ax_idx].set_ylabel('Frequency', fontsize=14)
+        # axes[ax_idx].set_title(f'Histogram of {pretty_metric} for {pretty_mode}', fontsize=16)
+        axes[ax_idx].grid(True, linestyle='--', alpha=0.7)
+        
+        # Only add legend to the first subplot to avoid redundancy
+        if ax_idx == 0:
+            axes[ax_idx].legend(fontsize=12)
+
+    # Draw a line at r_min
+    if 'all_rates' in metrics and 'r_min' in raw_data['metadata']:
+        f_min = raw_data['metadata']['r_min']
+        rate_idx = metrics.index('all_rates')
+        axes[rate_idx].axvline(f_min, color='r', linestyle='--', linewidth=1.5, label=r'$r_{min}$')
+        axes[rate_idx].legend(fontsize=12)
+    
+    plt.tight_layout()
+    
+    # Save the figure
+    if save_path:
+        R = raw_data['metadata']['R']
+        os.makedirs(save_path, exist_ok=True)
+        metrics_str = '_'.join([m.replace('all_', '') for m in metrics])
+        filename = f'histogram_{metrics_str}_{f_min}_{R}.pdf'
+        plt.savefig(os.path.join(save_path, filename))
+        print(f"Created histogram: {filename}")
+    else:
+        plt.show()

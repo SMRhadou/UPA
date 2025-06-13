@@ -4,6 +4,7 @@ from numpy import linalg as LA
 from torch_geometric.data import Data, Dataset
 import pandas as pd  
 import os
+import pickle
 
 from collections import defaultdict
 
@@ -113,6 +114,56 @@ class WirelessDataset(Dataset):
     
 
 
+
+def save_raw_data(all_epoch_results, args, pathname=None, filename_prefix='raw_data'):
+    """
+    Save raw data arrays from all_epoch_results to disk for later analysis
+    
+    Parameters:
+        all_epoch_results: Dictionary containing all experiment results
+        args: Arguments object with experiment parameters
+        pathname: Directory to save the data
+        filename_prefix: Prefix for the filename
+    """
+    assert pathname is not None, 'Please provide a pathname to save the raw data'
+    
+    # Create raw data directory if it doesn't exist
+    raw_data_dir = os.path.join(pathname, 'raw_data')
+    os.makedirs(raw_data_dir, exist_ok=True)
+    
+    # Create a dictionary with metadata and raw arrays
+    raw_data = {
+        'metadata': {
+            'timestamp': pd.Timestamp.now(),
+            'r_min': args.r_min,
+            'P_max': args.P_max,
+            'n': args.n,
+            'constrained_subnetwork': args.constrained_subnetwork,
+            'graph_type': args.graph_type,
+            'sparse_graph_thresh': args.sparse_graph_thresh,
+            'TxLoc_perturbation_ratio': args.TxLoc_perturbation_ratio,
+            'R': args.R,
+            'best': args.best,
+        },
+        'raw_data': {}
+    }
+    
+    # Extract raw data arrays
+    for key, value in all_epoch_results.items():
+        if isinstance(key, tuple) and len(key) == 2:
+            mode, metric = key
+            if metric in ['all_rates', 'all_Ps']:
+                raw_data['raw_data'][f"{mode}_{metric}"] = value
+    
+    # Save the raw data
+    filename = f"{filename_prefix}_{args.r_min}_{args.R}.pkl"
+    filepath = os.path.join(raw_data_dir, filename)
+    
+    with open(filepath, 'wb') as f:
+        pickle.dump(raw_data, f)
+    
+    print(f"Raw data saved to {filepath}")
+    return filepath
 
 
 def save_results_to_csv(all_epoch_results, args, pathname=None, filename='results.csv'):

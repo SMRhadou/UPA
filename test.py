@@ -12,7 +12,7 @@ from torch_geometric.loader import DataLoader
 from core.data_gen import create_data
 from core.trainer import Trainer
 from core.modules import PrimalModel, DualModel
-from utils import WirelessDataset, save_results_to_csv, read_results, plot_ood_results
+from utils import WirelessDataset, save_results_to_csv, read_results, plot_ood_results, save_raw_data
 from utils_plots import plot_final_percentiles_comparison, plotting_collective, plot_constrainedvsUnconsrained_histograms
 
 NUM_EPOCHS = 800
@@ -66,17 +66,20 @@ def main(experiment_path, sa_path=None, best=True, perturbation_ratio=None, R=No
     num_samples = {'test': args.num_samples_test}
     if perturbation_ratio is not None:
         variable = perturbation_ratio
+        args.TxLoc_perturbation_ratio = perturbation_ratio
         data_path = './data/{}_{}_{}_perturbation_ratio_{}.json'.format(experiment_path.split('/')[-2][:30], args.graph_type, max_D_TxRx, perturbation_ratio)
         data_list = create_data(args.m, args.n, args.T, args.R, data_path, num_samples, args.P_max, args.noise_var, args.graph_type, 
                                 args.sparse_graph_thresh, perturbation_ratio)
     elif R is not None:
         variable = R
+        args.R = R
         data_path = './data/{}_{}_{}_R_{}.json'.format(experiment_path.split('/')[-2][:30], args.graph_type, max_D_TxRx, R)
         data_list = create_data(args.m, args.n, args.T, R, data_path, num_samples, args.P_max, args.noise_var, args.graph_type, 
                                 args.sparse_graph_thresh, perturbation_ratio=args.TxLoc_perturbation_ratio)
         
     elif n is not None:
         variable = n
+        args.n = n
         data_path = './data/{}_{}_{}_n_{}.json'.format(experiment_path.split('/')[-2][:30], args.graph_type, max_D_TxRx, n)
         data_list = create_data(n, n, args.T, args.R, data_path, num_samples, args.P_max, args.noise_var, args.graph_type, 
                                 args.sparse_graph_thresh, perturbation_ratio=args.TxLoc_perturbation_ratio)
@@ -176,15 +179,16 @@ def main(experiment_path, sa_path=None, best=True, perturbation_ratio=None, R=No
         plot_constrainedvsUnconsrained_histograms(all_epoch_results, int(np.floor(args.constrained_subnetwork*args.n)), args, 
                         pathname='{}/figs/{}_{}_'.format(experiment_path, variable, best), modes_list=modes_list)
 
-    # save mean_violation to an external csv file
+
+    save_raw_data(all_epoch_results, args, pathname=experiment_path)
     filename = 'results.csv'
     save_results_to_csv(all_epoch_results, args, pathname=experiment_path, filename=filename)
     df = read_results(experiment_path, filename=filename)
     plot_ood_results(
         df, 
         metrics=['rate_mean', 'mean_violation', 'constrained_mean_rate', 'unconstrained_mean_rate'],
-        varying_param='r_min',
-        fixed_params={'R': args.R, 'n': args.n, 'constrained_subnetwork': args.constrained_subnetwork, 'best':best,
+        varying_param='R',
+        fixed_params={'r_min': args.r_min, 'n': args.n, 'constrained_subnetwork': args.constrained_subnetwork, 'best':best,
                       'graph_type': args.graph_type, 'sparse_graph_thresh': args.sparse_graph_thresh, 
                       'TxLoc_perturbation_ratio': args.TxLoc_perturbation_ratio},
         save_dir=experiment_path

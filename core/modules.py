@@ -368,8 +368,8 @@ class DualModel(nn.Module):
             violation = torch.minimum(new_constraints_value, torch.zeros_like(new_constraints_value)).abs()
             violation = violation.view(-1, self.n)[:,:int(np.floor(self.constrained_subnetwork*self.n))]
             violation_rate = (violation>0).sum().float()/violation.numel()
-            
 
+            del cons_lvl
             # store results
             mu_over_time.append(mu.detach().cpu().squeeze())
             L_over_time.append(L.detach().cpu().squeeze())
