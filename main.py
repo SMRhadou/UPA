@@ -65,13 +65,13 @@ def make_parser():
     parser.add_argument('--num_epochs_dual', type=int, default=25, help='Number of training epochs')
     parser.add_argument('--num_iters', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--num_cycles', type=int, default=2000, help='Number of training cycles')
-    parser.add_argument('--device', type=str, default='cuda:1', help='Device to use for training (e.g., cuda:0, cpu)')
+    parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training (e.g., cuda:0, cpu)')
 
     parser.add_argument('--lr_main', type=float, default=1e-4, help='Learning rate for primal model parameters')
     parser.add_argument('--lr_primal_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers in trainnig primal model')
-    parser.add_argument('--primal_constraint_eps', type=float, default=0.2, help='constraint parameter in the descent constraints associated with training the primal network')
+    parser.add_argument('--primal_constraint_eps', type=float, default=0.05, help='constraint parameter in the descent constraints associated with training the primal network')
 
-    parser.add_argument('--lr_dual_main', type=float, default=1e-6, help='Learning rate for dual networks')
+    parser.add_argument('--lr_dual_main', type=float, default=1e-5, help='Learning rate for dual networks')
     parser.add_argument('--lr_dual_multiplier', type=float, default=1e-3, help='Learning rate for Lagrangian multipliers ion trainnig dual networks')
     parser.add_argument('--dual_constraint_eps', type=float, default=0.2, help='constraint parameter in the ascent constraints associated with training the dual network')
 
@@ -198,7 +198,7 @@ def main(args):
                                             args.n, args.r_min, args.noise_var, 200, args.ss_param, device,
                                             adjust_constraints=False)
                     
-                    data.target = torch.stack(target[0])[-1].unsqueeze(1)       # Mu*
+                    data.target = torch.stack(target[2])[-1].unsqueeze(1)       # 0:mu, 2:P
                     data_list_supervised[phase].append(data)
             path = '{}_target.json'.format(path)
             torch.save(data_list_supervised, path)

@@ -2,9 +2,11 @@ import torch
 import numpy as np
 from utils import calc_rates
 import wandb
+import torch.nn.functional as F
 
 from collections import defaultdict
 from torch_geometric.transforms import GDC
+
 
 
 
@@ -140,7 +142,7 @@ class Trainer():
 
         num_samplers = self.args.num_samplers if mode=='primal' else 1
         # initialize the training multipliers
-        
+        loss_list = []
         for data, batch_idx in loader:
             self.primal_model.zero_grad()
             data = data.to(self.device)
@@ -149,11 +151,7 @@ class Trainer():
                 data.y, data.edge_index_l, data.edge_weight_l, data.edge_index, data.edge_weight, \
                 data.weighted_adjacency, data.weighted_adjacency_l, \
                 data.transmitters_index, data.num_graphs
-            
-            # edge_index_l, edge_weight_l = GDC().sparsify_sparse(edge_index=edge_index_l, edge_weight=edge_weight_l,
-            #                                                         num_nodes=self.args.n, method="threshold", eps=2e-2)
-            
-            loss_list = []
+                        
             if num_samplers > 1:
                 # Create num_samplers copies of the graph
                 edge_index_expanded = []
@@ -197,7 +195,7 @@ class Trainer():
                                                                     self.args.mu_init, self.mu_uncons, self.device, False, True, num_samplers=10)
                     mu_over_time = torch.stack(mu_over_time).reshape(-1, self.args.n)
                     # Choose 32 random rows from mu_over_time
-                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers//2]
+                    selected_indices = torch.randperm(mu_over_time.shape[0])[:num_samplers//4]
                     mu = mu_over_time[selected_indices].view(-1,1).to(self.device)
                 
                     assert len(self.args.training_modes) == 2
@@ -533,3 +531,79 @@ class Trainer():
             full_power_results['unconstrained_mean_rate'].append(torch.mean(rates.view(data.num_graphs, self.args.n)[:, constrained_agents:].mean(1).detach().cpu()).tolist())
 
         return test_results, unrolling_results if self.dual_trained else None, randPolicy_results, full_power_results
+
+
+
+class naive_trainer():
+    def __init__(self, primal_model=None, primal_optimizer=None, device=None, args=None):
+        self.primal_model = primal_model
+        self.primal_optimizer = primal_optimizer
+        self.device = device
+        self.args = args
+        self.noise_var = args.noise_var
+
+    def train(self, epoch, loader):
+        assert self.primal_optimizer is not None, 'Primal optimizer is not defined'
+        assert self.primal_model is not None, 'Primal model is not defined'
+        assert self.device is not None, 'Device is not defined'
+
+        loss_list = []
+        for data, batch_idx in loader:
+            self.primal_model.zero_grad()
+            data = data.to(self.device)
+            y, target, edge_index_l, edge_weight_l, _, \
+            _, _, a_l, transmitters_index, num_graphs = \
+                data.y, data.target, data.edge_index_l, data.edge_weight_l, data.edge_index, data.edge_weight, \
+                data.weighted_adjacency, data.weighted_adjacency_l, \
+                data.transmitters_index, data.num_graphs
+            
+            self.primal_model.train()
+
+            # Forward pass and Losses
+            p = self.primal_model(None, edge_index_l, edge_weight_l, transmitters_index)
+            loss = F.mse_loss(p, target)
+
+            #backward
+            self.primal_optimizer.zero_grad()
+            loss.backward()
+            self.primal_optimizer.step()
+
+            loss_list.append(loss.iem())
+
+            if self.args.use_wandb:
+                wandb.log({'supervised training loss': loss.item()})
+            del data, edge_index_l, edge_weight_l, a_l, transmitters_index
+            torch.cuda.empty_cache()
+        
+        
+        return np.stack(loss_list).mean()
+    
+
+    def validate(self, loader):
+        assert self.primal_model is not None, 'Primal model is not defined'
+        assert self.device is not None, 'Device is not defined'
+
+        loss_list = []
+
+        for data, batch_idx in loader:
+            self.primal_model.zero_grad()
+            data = data.to(self.device)
+            y, target, edge_index_l, edge_weight_l, _, \
+            _, _, a_l, transmitters_index, num_graphs = \
+                data.y, data.target, data.edge_index_l, data.edge_weight_l, data.edge_index, data.edge_weight, \
+                data.weighted_adjacency, data.weighted_adjacency_l, \
+                data.transmitters_index, data.num_graphs
+            
+            self.primal_model.eval()
+
+            # Forward pass and Losses
+            p = self.primal_model(None, edge_index_l, edge_weight_l, transmitters_index)
+            loss = F.mse_loss(p, target)
+
+            loss_list.append(loss.item())
+            del data, edge_index_l, edge_weight_l, a_l, transmitters_index
+            torch.cuda.empty_cache()
+        return np.stack(loss_list).mean()
+
+
+
