@@ -560,7 +560,10 @@ class naive_trainer():
             self.primal_model.train()
 
             # Forward pass and Losses
-            p = self.primal_model(None, edge_index_l, edge_weight_l, transmitters_index)
+            constrained_agents = int(np.floor(self.args.constrained_subnetwork*self.args.n)) 
+            x = torch.cat([self.args.r_min * torch.ones(len(data), constrained_agents).to(self.device), 
+                        torch.zeros(len(data), int(np.ceil((1-self.args.constrained_subnetwork)*self.args.n))).to(self.device)], dim=1).view(-1, 1)
+            p = self.primal_model(x, edge_index_l, edge_weight_l, transmitters_index)
             loss = F.mse_loss(p, target)
 
             #backward
@@ -568,7 +571,7 @@ class naive_trainer():
             loss.backward()
             self.primal_optimizer.step()
 
-            loss_list.append(loss.iem())
+            loss_list.append(loss.item())
 
             if self.args.use_wandb:
                 wandb.log({'supervised training loss': loss.item()})
@@ -597,7 +600,10 @@ class naive_trainer():
             self.primal_model.eval()
 
             # Forward pass and Losses
-            p = self.primal_model(None, edge_index_l, edge_weight_l, transmitters_index)
+            constrained_agents = int(np.floor(self.args.constrained_subnetwork*self.args.n)) 
+            x = torch.cat([self.args.r_min * torch.ones(len(data), constrained_agents).to(self.device), 
+                        torch.zeros(len(data), int(np.ceil((1-self.args.constrained_subnetwork)*self.args.n))).to(self.device)], dim=1).view(-1, 1)
+            p = self.primal_model(x, edge_index_l, edge_weight_l, transmitters_index)
             loss = F.mse_loss(p, target)
 
             loss_list.append(loss.item())

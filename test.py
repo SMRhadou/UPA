@@ -98,7 +98,7 @@ def main(experiment_path, sa_path=None, best=True, perturbation_ratio=None, R=No
     
 
     # load model from checkpoint
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     primal_model = PrimalModel(args, device, unrolled=args.unrolled_primal)
     dual_model = DualModel(args, device)
     if sa_path is not None:

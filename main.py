@@ -17,8 +17,9 @@ from core.data_gen import create_data
 from core.channel import max_D_TxRx
 from utils import WirelessDataset
 
-from core.trainer import Trainer
+from core.trainer import Trainer, naive_trainer
 from core.modules import PrimalModel, DualModel
+from core.gnn import PrimalGNN
 
 RANDOM_SEED = 1357531
 
@@ -186,17 +187,17 @@ def main(args):
         if os.path.exists('{}_target.json'.format(path)):
             data_list_supervised = torch.load('{}_target.json'.format(path), map_location='cpu')
         else: 
-            experiment_path = "subnetwork_m_100_R_2000_Pmax_0_regular_ss_1.0_resilience_0.0_depth_3_MUmax_1.0_rMin_1.5_lr_0.0001/670bebaa"
-            checkpoint = torch.load('{}/primal_model.pt'.format(experiment_path), map_location='cpu')
+            experiment_path = "subnetwork_m_100_R_2000_Pmax_0_regular_ss_1.0_resilience_0.0_depth_3_MUmax_1.0_rMin_1.5_lr_0.0001/521349d3"
+            checkpoint = torch.load('./results/{}/primal_model.pt'.format(experiment_path), map_location='cpu')
             primal_model.load_state_dict(checkpoint['model_state_dict'])
 
             data_list_supervised = defaultdict(list)
-            for phase in batch_size.keys():
+            for phase in data_list.keys():
                 for data in tqdm(data_list[phase]):
                     data = data.to(device)
-                    target = dual_model.DA(primal_model, data, args.lr_DA_dual, 10.0, #args.dual_resilient_decay, 
-                                            args.n, args.r_min, args.noise_var, 200, args.ss_param, device,
-                                            adjust_constraints=False)
+                    target = dual_model.DA(primal_model, data, args.lr_DA_dual, args.dual_resilient_decay, #args.dual_resilient_decay, 
+                                            args.n, args.r_min, args.noise_var, 200, args.ss_param, 
+                                            args.mu_init, args.mu_uncons, device, False, True)
                     
                     data.target = torch.stack(target[2])[-1].unsqueeze(1)       # 0:mu, 2:P
                     data_list_supervised[phase].append(data)
@@ -204,10 +205,10 @@ def main(args):
             torch.save(data_list_supervised, path)
 
         for phase in data_list_supervised:
-            loader[mode] = {}
-            batch_size = {'train': args.batch_size if mode=='dual' else 1, 'valid': args.batch_size, 'test': args.batch_size}
+            loader['naive'] = {}
+            batch_size = {'train': args.batch_size, 'valid': args.batch_size, 'test': args.batch_size}
             for phase in data_list:
-                loader[mode][phase] = DataLoader(WirelessDataset(data_list[phase][:max_num_samples[mode]]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
+                loader['naive'][phase] = DataLoader(WirelessDataset(data_list_supervised[phase][:max_num_samples['dual']]), batch_size=batch_size[phase], shuffle=(phase == 'train'))
 
     # create a string indicating the main experiment (hyper)parameters
     experiment_name += '_ss_{}_resilience_{}_depth_{}_MUmax_{}_rMin_{}_lr_{}'.format(args.ss_param,
@@ -254,131 +255,146 @@ def main(args):
         json.dump(vars(args), f, indent = 6)
 
 
+    if not args.supervised:
+
+        ############################ Modules, Optimizers and Trainer ############################
+
+        
+        optimizers = {'primal': torch.optim.Adam(primal_model.parameters(), lr=args.lr_main), #, weight_decay=1e-5), 
+                    'dual': torch.optim.Adam(dual_model.parameters(), lr=args.lr_dual_main)}
+
+        trainer = Trainer(primal_model, dual_model, optimizers, device, args)
 
 
-    ############################ Modules, Optimizers and Trainer ############################
-
-    
-    optimizers = {'primal': torch.optim.Adam(primal_model.parameters(), lr=args.lr_main), #, weight_decay=1e-5), 
-                  'dual': torch.optim.Adam(dual_model.parameters(), lr=args.lr_dual_main)}
-
-    trainer = Trainer(primal_model, dual_model, optimizers, device, args)
 
 
+        ############################# start training and evaluation #############################
+        os.environ['CUDA_LAUNCH_BLOCKING']="1"
+        os.environ['TORCH_USE_CUDA_DSA'] = "1"
+        all_epoch_results = defaultdict(list)
+        best_loss = np.inf # {mode: np.inf for mode in args.training_modes}
 
+        num_epochs = {'primal': args.num_epochs_primal, 'dual': args.num_epochs_dual}
+        training_multipliers ={
+            'primal': torch.zeros(args.primal_num_blocks, 1).to(device),
+            'dual': torch.zeros(args.dual_num_blocks, 1).to(device)
+        }
+        print('Starting the training and evaluation process ...')
+        for cycle in tqdm(range(args.num_cycles)):
+            for mode in args.training_modes:
+                if mode == 'primal' and (cycle % num_epochs['dual'] !=0 or cycle == 0):
+                    continue
+                for epoch in tqdm(range(1)):
+                    for phase in loader[mode]:
+                        if phase == 'train':
+                            _, multipliers = trainer.train(epoch, loader[mode][phase], training_multipliers[mode], mode=mode)
+                            training_multipliers[mode] = multipliers
 
-    ############################# start training and evaluation #############################
-    os.environ['CUDA_LAUNCH_BLOCKING']="1"
-    os.environ['TORCH_USE_CUDA_DSA'] = "1"
-    all_epoch_results = defaultdict(list)
-    best_loss = np.inf # {mode: np.inf for mode in args.training_modes}
-
-    num_epochs = {'primal': args.num_epochs_primal, 'dual': args.num_epochs_dual}
-    training_multipliers ={
-        'primal': torch.zeros(args.primal_num_blocks, 1).to(device),
-        'dual': torch.zeros(args.dual_num_blocks, 1).to(device)
-    }
-    print('Starting the training and evaluation process ...')
-    for cycle in tqdm(range(args.num_cycles)):
-        for mode in args.training_modes:
-            if mode == 'primal' and (cycle % num_epochs['dual'] !=0 or cycle == 0):
-                continue
-            for epoch in tqdm(range(1)):
-                for phase in loader[mode]:
-                    if phase == 'train':
-                        _, multipliers = trainer.train(epoch, loader[mode][phase], training_multipliers[mode], mode=mode)
-                        training_multipliers[mode] = multipliers
-
-                    elif phase == 'valid':
-                        if mode == 'primal' and len(args.training_modes) == 1:
-                            eval_loss, _ = trainer.eval_primal(loader[mode][phase], num_iters=args.num_iters)
-                        elif mode == 'dual':
-                            with torch.no_grad():
-                                eval_loss = trainer.validate(loader[mode][phase])
-                        else:
-                            continue
-
-                        if args.use_wandb:
-                            wandb.log({'eval/evaluation loss': eval_loss})
-
-                        if eval_loss < best_loss:
-                            best_loss = eval_loss
-                            checkpoint = {
-                                    'model_state_dict': trainer.primal_model.state_dict(),
-                                    'optimizer_state_dict': trainer.primal_optimizer.state_dict(),
-                                    'loss': best_loss,
-                                    'epoch': epoch,
-                                    'cycle': cycle,
-                                }
-                            torch.save(checkpoint, './results/{}/best_primal_model.pt'.format(experiment_name))
-
-                            checkpoint = {
-                                    'model_state_dict': trainer.dual_model.state_dict(),
-                                    'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
-                                    'loss': best_loss,
-                                    'epoch': epoch,
-                                    'cycle': cycle,
-                                }
-                            torch.save(checkpoint, './results/{}/best_dual_model.pt'.format(experiment_name))
+                        elif phase == 'valid':
+                            if mode == 'primal' and len(args.training_modes) == 1:
+                                eval_loss, _ = trainer.eval_primal(loader[mode][phase], num_iters=args.num_iters)
+                            elif mode == 'dual':
+                                with torch.no_grad():
+                                    eval_loss = trainer.validate(loader[mode][phase])
+                            else:
+                                continue
 
                             if args.use_wandb:
-                                wandb.run.summary.update({"best_eval_loss": best_loss, "best_epoch": epoch})
-                                wandb.log({'eval/best evaluation loss': eval_loss})
+                                wandb.log({'eval/evaluation loss': eval_loss})
 
-                            # primal_results = trainer.eval_primal(loader[mode]['test'], num_iters=args.num_iters)  
-                            # plot_testing(primal_results, args.r_min, args.P_max, num_agents=args.n, num_iters=args.num_iters, pathname='./results/{}/figs/{}_'.format(experiment_name, epoch))
+                            if eval_loss < best_loss:
+                                best_loss = eval_loss
+                                checkpoint = {
+                                        'model_state_dict': trainer.primal_model.state_dict(),
+                                        'optimizer_state_dict': trainer.primal_optimizer.state_dict(),
+                                        'loss': best_loss,
+                                        'epoch': epoch,
+                                        'cycle': cycle,
+                                    }
+                                torch.save(checkpoint, './results/{}/best_primal_model.pt'.format(experiment_name))
 
-                                # SA_results, unrolling_results, random_results, full_power_results = trainer.eval(loader[mode][phase], num_iters=args.num_iters,
-                                #                                                                                 adjust_constraints=False)
+                                checkpoint = {
+                                        'model_state_dict': trainer.dual_model.state_dict(),
+                                        'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
+                                        'loss': best_loss,
+                                        'epoch': epoch,
+                                        'cycle': cycle,
+                                    }
+                                torch.save(checkpoint, './results/{}/best_dual_model.pt'.format(experiment_name))
 
-                                # modes_list = ['SA', 'random', 'full_power', 'unrolling']
-                                # for test_mode in modes_list:
-                                #     if mode == 'full_power':
-                                #         test_results = full_power_results
-                                #     elif test_mode == 'random':
-                                #         test_results = random_results 
-                                #     elif test_mode == 'unrolling':
-                                #         test_results = unrolling_results
-                                #     else:
-                                #         test_results = SA_results
+                                if args.use_wandb:
+                                    wandb.run.summary.update({"best_eval_loss": best_loss, "best_epoch": epoch})
+                                    wandb.log({'eval/best evaluation loss': eval_loss})
 
-                                #     all_epoch_results[test_mode, 'rate_mean'].append(np.stack(test_results['rate_mean']).mean())
-                                #     for percentile in [5, 10, 15, 20, 30, 40, 50]:
-                                #         all_epoch_results[mode, f'rate_{percentile}th_percentile'].append(np.stack(test_results[f'rate_{percentile}th_percentile']).mean())
-                                #     all_epoch_results[test_mode, 'all_rates'].append(test_results['all_rates'])
-                                #     all_epoch_results[test_mode, 'all_Ps'].append(test_results['all_Ps'])
-                                #     all_epoch_results[test_mode, 'violation_rate'].append(np.stack(test_results['violation_rate']).mean())
-                                #     all_epoch_results[test_mode, 'mean_violation'].append(np.stack(test_results['mean_violation']).mean())
-                                #     all_epoch_results[test_mode, 'constrained_mean_rate'].append(np.stack(test_results['constrained_mean_rate']).mean())
-                                #     all_epoch_results[test_mode, 'unconstrained_mean_rate'].append(np.stack(test_results['unconstrained_mean_rate']).mean())
-                                
-                                # all_epoch_results['SA', 'test_mu_over_time'].append(SA_results['test_mu_over_time'])
-                                # all_epoch_results['SA', 'L_over_time'].append(test_results['L_over_time'])
-                                # if mode == 'dual':
-                                #     all_epoch_results['unrolling', 'test_mu_over_time'].append(unrolling_results['test_mu_over_time'])
-                                #     all_epoch_results['unrolling', 'dual_fn'].append(np.stack(unrolling_results['dual_fn']))
 
-                        
 
-        ############################# save the results and model ############################
-        # save the results and overwrite the saved model with the current model 
-        with open('./results/{}/results_dict.pkl'.format(experiment_name), 'wb') as f:
-            pickle.dump(all_epoch_results, f)
-        checkpoint = {
-                        'model_state_dict': trainer.primal_model.state_dict(),
-                        'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
-                        'loss': eval_loss if 'eval_loss' in locals() else None,
-                        'epoch': epoch*cycle if 'epoch' in locals() else None,
-                    }
-        torch.save(checkpoint, './results/{}/primal_model.pt'.format(experiment_name))
-        if len(args.training_modes) > 1:
+
+            ############################# save the results and model ############################
+            # save the models after each cycle
             checkpoint = {
-                            'model_state_dict': trainer.dual_model.state_dict(),
+                            'model_state_dict': trainer.primal_model.state_dict(),
                             'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
-                            'loss': eval_loss,
-                            'epoch': epoch*cycle,
+                            'loss': eval_loss if 'eval_loss' in locals() else None,
+                            'epoch': epoch*cycle if 'epoch' in locals() else None,
                         }
-            torch.save(checkpoint, './results/{}/dual_model.pt'.format(experiment_name))
+            torch.save(checkpoint, './results/{}/primal_model.pt'.format(experiment_name))
+            if len(args.training_modes) > 1:
+                checkpoint = {
+                                'model_state_dict': trainer.dual_model.state_dict(),
+                                'optimizer_state_dict': trainer.dual_optimizer.state_dict(),
+                                'loss': eval_loss,
+                                'epoch': epoch*cycle,
+                            }
+                torch.save(checkpoint, './results/{}/dual_model.pt'.format(experiment_name))
+
+    else:
+
+        ############################# Naive GNN ############################
+
+        num_features_list = [1] + [args.primal_hidden_size] * (args.primal_num_sublayers * args.primal_num_blocks) + [1]
+        model = PrimalGNN(num_features_list=num_features_list, 
+                            P_max=args.P_max, k_hops = args.primal_k_hops, norm_layer = args.primal_norm_layer, dropout_rate=args.dropout_rate,
+                            conv_layer_normalize = args.conv_layer_normalize,
+                            norm_layer_mode=getattr(args, 'primal_norm_layer_mode', 'node'),
+                            ).to(device)
+        
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr_main)
+        trainer = naive_trainer(model, optimizer, device, args)
+
+        print('Starting the training and evaluation process ...')
+        best_loss = np.inf
+        for epoch in tqdm(range(args.num_cycles)):
+            # train
+            _ = trainer.train(epoch, loader['naive']['train'])
+
+            # validate
+            eval_loss = trainer.validate(loader['naive']['valid'])
+
+            if eval_loss < best_loss:
+                best_loss = eval_loss
+                # save the best model
+                checkpoint = {
+                        'model_state_dict': trainer.primal_model.state_dict(),
+                        'optimizer_state_dict': trainer.primal_optimizer.state_dict(),
+                        'loss': best_loss,
+                        'epoch': epoch,
+                    }
+                torch.save(checkpoint, './results/{}/best_naive_model.pt'.format(experiment_name))
+                if args.use_wandb:
+                    wandb.run.summary.update({"best_eval_loss": best_loss, "best_epoch": epoch})
+                    wandb.log({'eval/best evaluation loss': eval_loss})
+
+            if args.use_wandb:
+                wandb.log({'eval/evaluation loss': eval_loss})
+            
+            # save the model at each epoch
+            checkpoint = {
+                'model_state_dict': trainer.primal_model.state_dict(),
+                'optimizer_state_dict': trainer.primal_optimizer.state_dict(),
+                'loss': best_loss,
+                'epoch': epoch,
+            }
+            torch.save(checkpoint, './results/{}/best_naive_model.pt'.format(experiment_name))
 
 
     print('Training complete!')
